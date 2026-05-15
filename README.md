@@ -124,6 +124,15 @@ python -m ryder_carrier_api cleanup        # Run audit cleanup
 pytest
 ```
 
+### Pre-commit hooks
+Runs the same checks CI runs (ruff + ruff-format + mypy on commit, pytest on push).
+```bash
+pip install pre-commit
+pre-commit install              # installs git hook
+pre-commit install --hook-type pre-push
+pre-commit run --all-files      # run on the whole repo once
+```
+
 ## Authentication
 
 Snowflake authentication uses an abstraction so we can switch methods via the `SNOWFLAKE_AUTH_METHOD` env var without code changes:

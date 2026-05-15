@@ -17,7 +17,7 @@ from __future__ import annotations
 import threading
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any
+from typing import Any, ClassVar
 
 import httpx
 from tenacity import (
@@ -60,7 +60,7 @@ class _TransientHttpError(Exception):
 class RyderClient:
     """Thin wrapper around httpx with retry + concurrency cap."""
 
-    _PATH_BY_ENDPOINT = {
+    _PATH_BY_ENDPOINT: ClassVar[dict[RyderEndpoint, str]] = {
         RyderEndpoint.MILESTONE: "/loads/milestone-requests",
         RyderEndpoint.TRACE: "/loads/trace-requests",
     }
@@ -105,9 +105,7 @@ class RyderClient:
 
     # --- internals ---
 
-    def _post_with_retry(
-        self, endpoint: RyderEndpoint, payload: dict[str, Any]
-    ) -> RyderResult:
+    def _post_with_retry(self, endpoint: RyderEndpoint, payload: dict[str, Any]) -> RyderResult:
         path = self._PATH_BY_ENDPOINT[endpoint]
         attempts_seen = 0
 

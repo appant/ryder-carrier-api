@@ -12,8 +12,11 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from enum import Enum
+from typing import Any
+
+import structlog
 
 from ..clients.ryder_client import RyderClient, RyderEndpoint, RyderResultStatus
 from ..clients.snowflake_client import SnowflakeClient
@@ -51,10 +54,10 @@ class RunResult:
 
 class PullerService(ABC):
     """Template-method orchestrator. Subclasses only need to declare:
-        - pipeline_name (e.g. "trace")
-        - endpoint (Ryder endpoint enum)
-        - SQL string
-        - transformer
+    - pipeline_name (e.g. "trace")
+    - endpoint (Ryder endpoint enum)
+    - SQL string
+    - transformer
     """
 
     pipeline_name: str
@@ -155,7 +158,7 @@ class PullerService(ABC):
     # --- to be overridden by subclasses ---
 
     @abstractmethod
-    def _build_query_params(self, cursor_start: datetime, run_started: datetime) -> dict:
+    def _build_query_params(self, cursor_start: datetime, run_started: datetime) -> dict[str, Any]:
         """Return bind params for the SQL query."""
 
     # --- internals ---
@@ -177,7 +180,7 @@ class PullerService(ABC):
         floor = run_started - max_lookback
         return max(unclamped, floor)
 
-    def _handle_row(self, row: dict, *, log) -> str:  # noqa: ANN001
+    def _handle_row(self, row: dict[str, Any], *, log: structlog.stdlib.BoundLogger) -> str:
         """Process one row. Returns the outcome label for counters."""
         log.info("snowflake_row", row=_jsonable(row))
         try:
@@ -252,16 +255,16 @@ class PullerService(ABC):
 
 
 def _now_utc() -> datetime:
-    return datetime.now(tz=timezone.utc)
+    return datetime.now(tz=UTC)
 
 
-def _jsonable(row: dict) -> dict:
+def _jsonable(row: dict[str, Any]) -> dict[str, Any]:
     """Coerce Snowflake row values into JSON-serializable forms for logging."""
-    out: dict = {}
+    out: dict[str, Any] = {}
     for k, v in row.items():
         if isinstance(v, datetime):
             out[k] = v.isoformat()
-        elif hasattr(v, "__float__") and not isinstance(v, (int, float, bool)):
+        elif hasattr(v, "__float__") and not isinstance(v, int | float | bool):
             out[k] = float(v)
         else:
             out[k] = v

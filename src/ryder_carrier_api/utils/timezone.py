@@ -11,15 +11,15 @@ IANA names like `America/Chicago`. We convert here.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
 
 
 def to_utc_aware(value: datetime) -> datetime:
     """Make a datetime timezone-aware in UTC. Treats naive values as already UTC."""
     if value.tzinfo is None:
-        return value.replace(tzinfo=timezone.utc)
-    return value.astimezone(timezone.utc)
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
 
 
 def format_ryder_datetime(value: datetime, iana_tz_name: str | None) -> str:
@@ -30,10 +30,7 @@ def format_ryder_datetime(value: datetime, iana_tz_name: str | None) -> str:
     Output example: '2026-05-26T01:00:00.0000000+00:00'
     """
     utc_value = to_utc_aware(value)
-    if iana_tz_name:
-        local = utc_value.astimezone(ZoneInfo(iana_tz_name))
-    else:
-        local = utc_value
+    local = utc_value.astimezone(ZoneInfo(iana_tz_name)) if iana_tz_name else utc_value
     # Pad microseconds to 7 digits to match Ryder's example format.
     return local.strftime("%Y-%m-%dT%H:%M:%S.%f0") + _offset_string(local)
 

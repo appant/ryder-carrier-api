@@ -61,7 +61,7 @@ class SnowflakeClient:
     # --- queries ---
 
     @contextmanager
-    def _cursor(self) -> Generator[snowflake.connector.cursor.DictCursor, None, None]:
+    def _cursor(self) -> Generator[Any, None, None]:
         if self._connection is None:
             raise RuntimeError("SnowflakeClient is not connected; use within a `with` block.")
         cur = self._connection.cursor(snowflake.connector.DictCursor)
@@ -88,5 +88,4 @@ class SnowflakeClient:
                 batch = cur.fetchmany(chunk_size)
                 if not batch:
                     break
-                for row in batch:
-                    yield row
+                yield from batch

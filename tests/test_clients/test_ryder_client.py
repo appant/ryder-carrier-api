@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import httpx
-import pytest
 import respx
 
 from ryder_carrier_api.clients.ryder_client import (
@@ -38,9 +37,7 @@ def _client() -> RyderClient:
 
 @respx.mock
 def test_200_classified_as_sent() -> None:
-    respx.post("https://api.example.test/v1/loads/trace-requests").respond(
-        200, json={"ok": True}
-    )
+    respx.post("https://api.example.test/v1/loads/trace-requests").respond(200, json={"ok": True})
     result = _client().post(RyderEndpoint.TRACE, {"loadNumber": "1"})
     assert result.status == RyderResultStatus.SENT
     assert result.response_code == 200
@@ -127,9 +124,7 @@ def test_network_error_treated_as_transient() -> None:
 
 @respx.mock
 def test_milestone_uses_correct_endpoint() -> None:
-    route = respx.post(
-        "https://api.example.test/v1/loads/milestone-requests"
-    ).respond(200, json={})
+    route = respx.post("https://api.example.test/v1/loads/milestone-requests").respond(200, json={})
     _client().post(RyderEndpoint.MILESTONE, {})
     assert route.called
 

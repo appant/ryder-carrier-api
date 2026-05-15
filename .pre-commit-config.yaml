@@ -1,0 +1,44 @@
+# Run the same checks CI runs, locally, before each commit.
+# Install once: `pip install pre-commit && pre-commit install`
+# Run on all files: `pre-commit run --all-files`
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: ["--maxkb=500"]
+      - id: detect-private-key
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.8.4
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
+
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.13.0
+    hooks:
+      - id: mypy
+        files: ^src/
+        additional_dependencies:
+          - pydantic==2.10.4
+          - pydantic-settings==2.7.0
+          - structlog==24.4.0
+          - httpx==0.28.1
+          - tenacity==9.0.0
+
+  - repo: local
+    hooks:
+      - id: pytest
+        name: pytest
+        entry: pytest tests -q
+        language: system
+        pass_filenames: false
+        stages: [pre-push]   # run only on push, not every commit (keeps commits fast)

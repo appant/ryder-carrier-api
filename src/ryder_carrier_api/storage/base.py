@@ -11,7 +11,6 @@ from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 
-
 # =============================================================================
 # Watermark
 # =============================================================================
@@ -57,7 +56,7 @@ class AuditStatus(str, Enum):
 @dataclass(frozen=True)
 class AuditEntry:
     pipeline: str
-    natural_key: str   # sha256 hash of loadNumber + event_type + actual_event_at
+    natural_key: str  # sha256 hash of loadNumber + event_type + actual_event_at
     status: AuditStatus
     response_code: int | None
     response_body: str

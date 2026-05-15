@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from azure.core.exceptions import ResourceNotFoundError
@@ -16,7 +16,6 @@ from .base import (
     WatermarkRecord,
     WatermarkStore,
 )
-
 
 # Common partition key for the single-pipeline-per-row watermark table.
 # Keeps everything in one partition for fast lookup; volume is trivial.
@@ -64,9 +63,7 @@ class TableStorageWatermarkStore(WatermarkStore):
 
     def get(self, pipeline: str) -> WatermarkRecord | None:
         try:
-            entity = self._client.get_entity(
-                partition_key=_WATERMARK_PARTITION, row_key=pipeline
-            )
+            entity = self._client.get_entity(partition_key=_WATERMARK_PARTITION, row_key=pipeline)
         except ResourceNotFoundError:
             return None
         return WatermarkRecord(
@@ -172,8 +169,8 @@ def _entity_to_entry(entity: dict[str, Any]) -> AuditEntry:
 
 def _to_utc(value: datetime) -> datetime:
     if value.tzinfo is None:
-        return value.replace(tzinfo=timezone.utc)
-    return value.astimezone(timezone.utc)
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
 
 
 def _to_utc_optional(value: datetime | None) -> datetime | None:

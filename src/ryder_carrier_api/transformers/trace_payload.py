@@ -131,7 +131,7 @@ def _coerce_stop_sequence(value: Any) -> int:
     return n if n >= 1 else 1
 
 
-class SkipRow(Exception):
+class SkipRow(Exception):  # noqa: N818 — existing name; renaming ripples across imports
     """Raised when a row cannot produce a valid payload (e.g. no resource id).
 
     The service catches this and increments a metric instead of failing the tick.

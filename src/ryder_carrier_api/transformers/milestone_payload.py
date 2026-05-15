@@ -33,21 +33,21 @@ from .trace_payload import SkipRow
 # Mapping from MasterMind EVENT_TYPE → Ryder EDI214 eventCode.
 # Source: api_mappings/milestone_api_mapping.md + RyderCarrierAPI-milestone-reason-codes.pdf
 EVENT_TYPE_TO_CODE: dict[str, str] = {
-    "Driver Arrival":            "X3",
-    "Driver Departure":          "X1",
-    "Hook Loaded":               "AF",
-    "Hook Empty":                "AF",
-    "Drop Loaded":               "CP",
-    "Drop Empty":                "CP",
-    "Drop Unloading Begin":      "X6",
-    "In-Gate Loaded":            "X3",
-    "In-Gate Empty":             "X3",
-    "Out-Gate Loaded":           "X1",
-    "Terminal Arrival":          "X3",
-    "Terminal Departure":        "X1",
-    "Bobtail In":                "X3",
-    "Bobtail Out":               "X1",
-    "Notification":              "A9",
+    "Driver Arrival": "X3",
+    "Driver Departure": "X1",
+    "Hook Loaded": "AF",
+    "Hook Empty": "AF",
+    "Drop Loaded": "CP",
+    "Drop Empty": "CP",
+    "Drop Unloading Begin": "X6",
+    "In-Gate Loaded": "X3",
+    "In-Gate Empty": "X3",
+    "Out-Gate Loaded": "X1",
+    "Terminal Arrival": "X3",
+    "Terminal Departure": "X1",
+    "Bobtail In": "X3",
+    "Bobtail Out": "X1",
+    "Notification": "A9",
     # Defaults to "A9" (General Status Update) if not mapped
 }
 

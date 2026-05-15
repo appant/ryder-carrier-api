@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from ..config import AppSettings
 from ..storage.base import AuditStore
@@ -17,9 +17,7 @@ class CleanupService:
         self._audit = audit
 
     def run(self) -> int:
-        cutoff = datetime.now(tz=timezone.utc) - timedelta(
-            days=self._settings.audit_retention_days
-        )
+        cutoff = datetime.now(tz=UTC) - timedelta(days=self._settings.audit_retention_days)
         log = logger.bind(cutoff=cutoff.isoformat())
         log.info("audit_cleanup_start")
         total = 0

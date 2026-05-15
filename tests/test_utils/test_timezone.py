@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from ryder_carrier_api.utils.timezone import (
     format_ryder_datetime,
@@ -7,14 +7,13 @@ from ryder_carrier_api.utils.timezone import (
     utc_offset_string,
 )
 
-
 # --- to_utc_aware ---
 
 
 def test_naive_treated_as_utc() -> None:
     naive = datetime(2026, 4, 2, 12, 0, 0)
     result = to_utc_aware(naive)
-    assert result.tzinfo is timezone.utc
+    assert result.tzinfo is UTC
 
 
 def test_aware_converted_to_utc() -> None:
@@ -22,7 +21,7 @@ def test_aware_converted_to_utc() -> None:
 
     aware = datetime(2026, 4, 2, 7, 0, 0, tzinfo=ZoneInfo("America/Chicago"))
     result = to_utc_aware(aware)
-    assert result.tzinfo is timezone.utc
+    assert result.tzinfo is UTC
     assert result.hour == 12  # 07:00 CDT = 12:00 UTC
 
 

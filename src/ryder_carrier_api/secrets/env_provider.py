@@ -25,7 +25,5 @@ class EnvSecretProvider(SecretProvider):
         env_name = name.upper().replace("-", "_")
         value = os.getenv(env_name)
         if not value:
-            raise KeyError(
-                f"Secret '{name}' not found in environment (looked for {env_name})"
-            )
+            raise KeyError(f"Secret '{name}' not found in environment (looked for {env_name})")
         return value

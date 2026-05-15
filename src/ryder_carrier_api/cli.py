@@ -60,7 +60,7 @@ def main(argv: list[str] | None = None) -> int:
             return 2
         log.info("job_complete")
         return 0
-    except Exception:  # noqa: BLE001
+    except Exception:
         log.exception("job_failed")
         return 1
 
@@ -133,9 +133,7 @@ def _build_secret_provider(settings: AppSettings) -> SecretProvider:
     return EnvSecretProvider()
 
 
-def build_auth_provider(
-    settings: AppSettings, secrets: SecretProvider
-) -> SnowflakeAuthProvider:
+def build_auth_provider(settings: AppSettings, secrets: SecretProvider) -> SnowflakeAuthProvider:
     """Selects auth implementation from config. Flip method without touching code."""
     if settings.snowflake_auth_method == SnowflakeAuthMethod.PASSWORD:
         return UsernamePasswordAuthProvider(settings=settings, secrets=secrets)

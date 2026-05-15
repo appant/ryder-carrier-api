@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from ryder_carrier_api.clients.ryder_client import (
@@ -19,7 +19,6 @@ from ryder_carrier_api.storage.in_memory import (
 )
 from ryder_carrier_api.transformers.base import PayloadTransformer, TransformedPayload
 from ryder_carrier_api.transformers.trace_payload import SkipRow
-
 
 # --- Fakes ---
 
@@ -208,15 +207,18 @@ def test_dedup_skips_rows_already_sent() -> None:
     audit = InMemoryAuditStore()
     # Pre-seed audit with k1 already sent.
     from ryder_carrier_api.storage.base import AuditEntry, AuditStatus
-    audit.upsert(AuditEntry(
-        pipeline="trace",
-        natural_key="k1",
-        status=AuditStatus.SENT,
-        response_code=200,
-        response_body="ok",
-        sent_at_utc=datetime.now(tz=timezone.utc),
-        failed_at_utc=None,
-    ))
+
+    audit.upsert(
+        AuditEntry(
+            pipeline="trace",
+            natural_key="k1",
+            status=AuditStatus.SENT,
+            response_code=200,
+            response_body="ok",
+            sent_at_utc=datetime.now(tz=UTC),
+            failed_at_utc=None,
+        )
+    )
     fake_ryder = _FakeRyder([_sent()])  # only one POST expected
     puller = _TestPuller(
         settings=_settings(),
@@ -235,8 +237,8 @@ def test_dedup_skips_rows_already_sent() -> None:
 
 def test_replay_after_transient_does_not_double_send() -> None:
     """The full safety dance:
-       1) Tick A: rows k1,k2 — k1 sent, k2 transient. Watermark stalls.
-       2) Tick B: same rows replay — k1 caught by dedup, k2 retried.
+    1) Tick A: rows k1,k2 — k1 sent, k2 transient. Watermark stalls.
+    2) Tick B: same rows replay — k1 caught by dedup, k2 retried.
     """
     watermarks = InMemoryWatermarkStore()
     audit = InMemoryAuditStore()

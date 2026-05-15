@@ -34,9 +34,7 @@ class BlobJsonSecretProvider(SecretProvider):
     (e.g. those configured in config.py: `secret_name_snowflake_user`).
     """
 
-    def __init__(
-        self, blob_url: str, credential: DefaultAzureCredential | None = None
-    ) -> None:
+    def __init__(self, blob_url: str, credential: DefaultAzureCredential | None = None) -> None:
         client = BlobClient.from_blob_url(
             blob_url=blob_url,
             credential=credential or DefaultAzureCredential(),
