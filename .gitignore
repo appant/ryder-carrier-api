@@ -52,3 +52,7 @@ ryder_config.json
 # Bicep build artifacts
 infra/main.json
 *.parameters.local.json
+
+# Local secrets — only the sample is committed
+local_config/CONFIG.dev.json
+local_config/CONFIG.prod.json

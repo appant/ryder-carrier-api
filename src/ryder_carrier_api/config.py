@@ -38,8 +38,13 @@ class AppSettings(BaseSettings):
     log_level: str = "INFO"
     application_insights_connection_string: str = ""
 
-    # --- Key Vault ---
-    key_vault_uri: str
+    # --- Secret source (pick one) ---
+    # Set ONE of these. The CLI picks the matching SecretProvider at startup.
+    #   key_vault_uri    -> Azure Key Vault (one secret per key, native Azure)
+    #   secrets_blob_url -> Azure Blob JSON (one JSON blob holds all secrets,
+    #                       matches existing telematics pattern)
+    key_vault_uri: str = ""
+    secrets_blob_url: str = ""
 
     # --- Snowflake ---
     snowflake_auth_method: SnowflakeAuthMethod = SnowflakeAuthMethod.PASSWORD
@@ -47,7 +52,7 @@ class AppSettings(BaseSettings):
     snowflake_warehouse: str = "COMPUTE_WH"
     snowflake_database: str
     snowflake_schema: str = "PUBLIC"
-    snowflake_role: str
+    snowflake_role: str = ""
     snowflake_query_timeout_seconds: int = 60
 
     secret_name_snowflake_user: str = "snowflake-user"
@@ -70,7 +75,10 @@ class AppSettings(BaseSettings):
     )
 
     # --- Storage (state) ---
-    storage_account_name: str
+    # In Azure: set storage_account_name, auth via DefaultAzureCredential.
+    # Local dev (Azurite): set storage_connection_string — wins if both are set.
+    storage_account_name: str = ""
+    storage_connection_string: str = ""
     watermark_table_name: str = "watermarks"
     audit_table_name: str = "sentaudit"
 

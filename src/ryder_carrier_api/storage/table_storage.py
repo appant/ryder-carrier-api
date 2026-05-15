@@ -27,12 +27,20 @@ def _build_table_client(
     storage_account_url: str,
     table_name: str,
     credential: DefaultAzureCredential | None = None,
+    connection_string: str | None = None,
 ) -> TableClient:
-    """Create a TableClient, ensuring the table exists."""
-    service = TableServiceClient(
-        endpoint=storage_account_url,
-        credential=credential or DefaultAzureCredential(),
-    )
+    """Create a TableClient, ensuring the table exists.
+
+    If `connection_string` is provided, uses shared-key auth (Azurite path).
+    Otherwise uses `endpoint + DefaultAzureCredential` (real Azure path).
+    """
+    if connection_string:
+        service = TableServiceClient.from_connection_string(connection_string)
+    else:
+        service = TableServiceClient(
+            endpoint=storage_account_url,
+            credential=credential or DefaultAzureCredential(),
+        )
     service.create_table_if_not_exists(table_name)
     return service.get_table_client(table_name)
 
@@ -48,8 +56,11 @@ class TableStorageWatermarkStore(WatermarkStore):
         storage_account_url: str,
         table_name: str,
         credential: DefaultAzureCredential | None = None,
+        connection_string: str | None = None,
     ) -> None:
-        self._client = _build_table_client(storage_account_url, table_name, credential)
+        self._client = _build_table_client(
+            storage_account_url, table_name, credential, connection_string
+        )
 
     def get(self, pipeline: str) -> WatermarkRecord | None:
         try:
@@ -93,8 +104,11 @@ class TableStorageAuditStore(AuditStore):
         storage_account_url: str,
         table_name: str,
         credential: DefaultAzureCredential | None = None,
+        connection_string: str | None = None,
     ) -> None:
-        self._client = _build_table_client(storage_account_url, table_name, credential)
+        self._client = _build_table_client(
+            storage_account_url, table_name, credential, connection_string
+        )
 
     def get(self, pipeline: str, natural_key: str) -> AuditEntry | None:
         try:

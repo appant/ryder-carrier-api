@@ -1,0 +1,11 @@
+using './main.bicep'
+
+param env                = 'dev'
+param snowflakeAccount   = 'bj38886.central-us.azure'
+param snowflakeDatabase  = 'MASTERY_USMMGTEST_MASTERMIND_SHARE'
+param snowflakeWarehouse = 'COMPUTE_WH'
+param snowflakeSchema    = 'PUBLIC'
+param snowflakeRole      = 'RYDER_INTEGRATION_ROLE_DEV'
+param snowflakeAuthMethod = 'password'
+param ryderApiBaseUrl    = 'https://api.ryder.com/rcsc/events/v1'
+param ryderCustomerCodes = 'AMEBOTFRTX,DRPEPPFRTX,KEURIGFRTX,KEUDRPFRTX,MOTTSFRTX,UNISHECT,UNISHCT,UNILEVSHCT,UNICADSHCT'

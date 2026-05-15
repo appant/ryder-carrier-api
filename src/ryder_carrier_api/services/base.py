@@ -179,17 +179,33 @@ class PullerService(ABC):
 
     def _handle_row(self, row: dict, *, log) -> str:  # noqa: ANN001
         """Process one row. Returns the outcome label for counters."""
+        log.info("snowflake_row", row=_jsonable(row))
         try:
             transformed = self._transformer.transform(row)
         except SkipRow as exc:
             log.warning("row_skipped_invalid", reason=str(exc))
             return "invalid"
 
+        log.info(
+            "ryder_payload",
+            natural_key=transformed.natural_key,
+            payload=transformed.payload,
+        )
+
         existing = self._audit.get(self.pipeline_name, transformed.natural_key)
         if existing is not None:
+            log.info("row_skipped_dedup", natural_key=transformed.natural_key)
             return "dedup"
 
         result = self._ryder.post(self.endpoint, transformed.payload)
+        log.info(
+            "ryder_response",
+            natural_key=transformed.natural_key,
+            response_code=result.response_code,
+            response_body=result.response_body[:2000],
+            attempts=result.attempts,
+            status=result.status.value,
+        )
 
         if result.status == RyderResultStatus.SENT:
             self._audit.upsert(
@@ -237,3 +253,16 @@ class PullerService(ABC):
 
 def _now_utc() -> datetime:
     return datetime.now(tz=timezone.utc)
+
+
+def _jsonable(row: dict) -> dict:
+    """Coerce Snowflake row values into JSON-serializable forms for logging."""
+    out: dict = {}
+    for k, v in row.items():
+        if isinstance(v, datetime):
+            out[k] = v.isoformat()
+        elif hasattr(v, "__float__") and not isinstance(v, (int, float, bool)):
+            out[k] = float(v)
+        else:
+            out[k] = v
+    return out

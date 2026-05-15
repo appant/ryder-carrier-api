@@ -130,12 +130,15 @@ class RyderClient:
                     attempts=attempts_seen,
                 )
 
-            if code == 429 or 500 <= code < 600:
-                # Honor Retry-After if Ryder provides one (number of seconds).
-                # tenacity's wait will mostly handle pacing; this is best-effort.
+            # Retryable: 3xx (endpoint moved — don't auto-follow to avoid leaking
+            # the API key to an unintended origin; surface as transient so an
+            # operator updates RYDER_API_BASE_URL deliberately), 408, 425, 429,
+            # and all 5xx.
+            if 300 <= code < 400 or code in (408, 425, 429) or 500 <= code < 600:
                 raise _TransientHttpError(f"{code} retryable: {body[:200]}")
 
-            # 4xx that isn't 429: permanent rejection — payload-level problem.
+            # 4xx (excluding the retryable ones above): permanent rejection —
+            # payload-level problem.
             return RyderResult(
                 status=RyderResultStatus.FAILED_PERMANENTLY,
                 response_code=code,

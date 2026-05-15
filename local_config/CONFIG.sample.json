@@ -1,0 +1,7 @@
+{
+  "_comment": "Copy this to CONFIG.dev.json or CONFIG.prod.json and fill in real values. NEVER commit the env-specific files (already gitignored).",
+  "snowflake-user": "SVC_RYDER_INTEGRATION_DEV",
+  "snowflake-password": "<fill in>",
+  "ryder-api-key": "<fill in once Ryder provides it>",
+  "ryder-carrier-scac": "USMM"
+}

@@ -1,0 +1,45 @@
+services:
+  azurite:
+    image: mcr.microsoft.com/azure-storage/azurite:latest
+    container_name: ryder-azurite
+    command: >
+      azurite
+      --tableHost 0.0.0.0
+      --tablePort 10002
+      --location /data
+      --skipApiVersionCheck
+      --loose
+    ports:
+      - "10002:10002"
+    volumes:
+      - azurite_data:/data
+    healthcheck:
+      test: ["CMD", "nc", "-z", "127.0.0.1", "10002"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ryder-app
+    depends_on:
+      azurite:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      # Storage config: leave STORAGE_CONNECTION_STRING / STORAGE_ACCOUNT_NAME
+      # empty so the app falls back to InMemoryWatermarkStore + InMemoryAuditStore
+      # for local testing. To use Azurite instead, set:
+      #   STORAGE_CONNECTION_STRING: "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEEdcAaNsCqXc8Vr+OcEs1J6Wjzr5MhrkjI2A==;TableEndpoint=http://azurite:10002/devstoreaccount1;"
+      STORAGE_CONNECTION_STRING: ""
+      STORAGE_ACCOUNT_NAME: ""
+    # Default to `trace`; override per-run with:
+    #   docker compose run --rm app milestone
+    #   docker compose run --rm app cleanup
+    command: ["trace"]
+
+volumes:
+  azurite_data:

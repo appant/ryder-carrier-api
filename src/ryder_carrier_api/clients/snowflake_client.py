@@ -40,16 +40,17 @@ class SnowflakeClient:
     def connect(self) -> None:
         if self._connection is not None:
             return
-        params = {
+        params: dict[str, Any] = {
             "account": self._settings.snowflake_account,
             "warehouse": self._settings.snowflake_warehouse,
             "database": self._settings.snowflake_database,
             "schema": self._settings.snowflake_schema,
-            "role": self._settings.snowflake_role,
             "client_session_keep_alive": False,
             "network_timeout": self._settings.snowflake_query_timeout_seconds,
             **self._auth.get_connection_params(),
         }
+        if self._settings.snowflake_role:
+            params["role"] = self._settings.snowflake_role
         self._connection = snowflake.connector.connect(**params)
 
     def close(self) -> None:

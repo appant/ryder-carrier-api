@@ -17,6 +17,8 @@ import sys
 from importlib.resources import files
 from pathlib import Path
 
+from dotenv import load_dotenv
+
 from .clients.auth.base import SnowflakeAuthProvider
 from .clients.auth.keypair_auth import KeyPairAuthProvider
 from .clients.auth.password_auth import UsernamePasswordAuthProvider
@@ -24,10 +26,14 @@ from .clients.ryder_client import RyderClient
 from .clients.snowflake_client import SnowflakeClient
 from .config import AppSettings, SnowflakeAuthMethod, get_settings
 from .secrets.base import SecretProvider
+from .secrets.blob_json import BlobJsonSecretProvider
+from .secrets.env_provider import EnvSecretProvider
 from .secrets.key_vault import KeyVaultSecretProvider
 from .services.cleanup_service import CleanupService
 from .services.milestone_service import MilestoneService
 from .services.trace_service import TraceService
+from .storage.base import AuditStore, WatermarkStore
+from .storage.in_memory import InMemoryAuditStore, InMemoryWatermarkStore
 from .storage.table_storage import TableStorageAuditStore, TableStorageWatermarkStore
 from .transformers.milestone_payload import MilestonePayloadTransformer
 from .transformers.trace_payload import TracePayloadTransformer
@@ -35,6 +41,7 @@ from .utils.logging import configure_logging, get_logger
 
 
 def main(argv: list[str] | None = None) -> int:
+    load_dotenv()
     args = _parse_args(argv)
     settings = get_settings()
     configure_logging(level=settings.log_level)
@@ -114,7 +121,16 @@ def _run_cleanup(settings: AppSettings) -> None:
 
 
 def _build_secret_provider(settings: AppSettings) -> SecretProvider:
-    return KeyVaultSecretProvider(vault_uri=settings.key_vault_uri)
+    """Select SecretProvider based on which env var is set.
+
+    Key Vault wins if both are set (more secure default). Falls back to
+    EnvSecretProvider for local dev — never use that path in Azure.
+    """
+    if settings.key_vault_uri:
+        return KeyVaultSecretProvider(vault_uri=settings.key_vault_uri)
+    if settings.secrets_blob_url:
+        return BlobJsonSecretProvider(blob_url=settings.secrets_blob_url)
+    return EnvSecretProvider()
 
 
 def build_auth_provider(
@@ -128,17 +144,23 @@ def build_auth_provider(
     raise ValueError(f"Unknown SNOWFLAKE_AUTH_METHOD: {settings.snowflake_auth_method}")
 
 
-def _build_watermark_store(settings: AppSettings) -> TableStorageWatermarkStore:
+def _build_watermark_store(settings: AppSettings) -> WatermarkStore:
+    if not settings.storage_account_name and not settings.storage_connection_string:
+        return InMemoryWatermarkStore()
     return TableStorageWatermarkStore(
         storage_account_url=settings.storage_account_url,
         table_name=settings.watermark_table_name,
+        connection_string=settings.storage_connection_string or None,
     )
 
 
-def _build_audit_store(settings: AppSettings) -> TableStorageAuditStore:
+def _build_audit_store(settings: AppSettings) -> AuditStore:
+    if not settings.storage_account_name and not settings.storage_connection_string:
+        return InMemoryAuditStore()
     return TableStorageAuditStore(
         storage_account_url=settings.storage_account_url,
         table_name=settings.audit_table_name,
+        connection_string=settings.storage_connection_string or None,
     )
 
 
