@@ -60,6 +60,11 @@ class AppSettings(BaseSettings):
     secret_name_snowflake_private_key: str = "snowflake-private-key"
     secret_name_snowflake_private_key_passphrase: str = "snowflake-private-key-passphrase"
 
+    # When set, KeyPairAuthProvider reads the PEM from this file instead of
+    # the secret store. Convenient for local dev — avoids pasting a multi-line
+    # PEM into .env. Leave empty in Azure so the secret-store path is used.
+    snowflake_private_key_path: str = ""
+
     # --- Ryder Carrier API ---
     ryder_api_base_url: str = "https://api.ryder.com/rcsc/events/v1"
     ryder_timeout_seconds: int = 30

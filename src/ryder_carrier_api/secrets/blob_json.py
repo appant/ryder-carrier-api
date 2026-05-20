@@ -27,7 +27,7 @@ class BlobJsonSecretProvider(SecretProvider):
           "snowflake-user": "SVC_RYDER_INTEGRATION_DEV",
           "snowflake-password": "...",
           "ryder-api-key": "...",
-          "ryder-carrier-scac": "USMM"
+          "ryder-carrier-scac": "ANSH"
         }
 
     Secret names must match the same logical names used elsewhere

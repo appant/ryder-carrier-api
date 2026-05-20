@@ -74,7 +74,7 @@ var storageName  = 'st${suffixNoDash}'
 var kvName       = 'kv-${suffix}'
 var uamiName     = 'uami-${suffix}'
 var lawName      = 'law-${suffix}'
-var appiName     = 'appi-${suffix}'
+var appiName     = 'ai-${suffix}'
 var caeName      = 'cae-${suffix}'
 var jobNamePrefix = 'job-${suffix}'
 

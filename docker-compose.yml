@@ -36,9 +36,19 @@ services:
       #   STORAGE_CONNECTION_STRING: "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEEdcAaNsCqXc8Vr+OcEs1J6Wjzr5MhrkjI2A==;TableEndpoint=http://azurite:10002/devstoreaccount1;"
       STORAGE_CONNECTION_STRING: ""
       STORAGE_ACCOUNT_NAME: ""
+      # Override the .env path with the container-side mount target so the same
+      # .env works on both host and inside the container.
+      SNOWFLAKE_PRIVATE_KEY_PATH: /keys/ryder_dev_private.p8
+    volumes:
+      # Key-pair PEM lives on the host (outside the repo). Mount read-only.
+      - C:\Users\apant\snowflake-keys:/keys:ro
+      # Mount scripts/ so ad-hoc tools (smoke_snowflake.py) are runnable without
+      # rebuilding the image.
+      - ./scripts:/app/scripts:ro
     # Default to `trace`; override per-run with:
     #   docker compose run --rm app milestone
     #   docker compose run --rm app cleanup
+    #   docker compose run --rm --entrypoint python app scripts/smoke_snowflake.py
     command: ["trace"]
 
 volumes:
