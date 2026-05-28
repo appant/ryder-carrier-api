@@ -66,16 +66,32 @@ def test_reason_code_passed_through_when_set() -> None:
     assert out.payload["reasonCode"] == "CHS"
 
 
-def test_skiprow_when_city_missing() -> None:
+def test_missing_city_omits_key_from_payload() -> None:
+    """eventCity is not a bare-minimum field — payload still goes out, key omitted."""
     t = MilestonePayloadTransformer()
-    with pytest.raises(SkipRow):
-        t.transform(_base_row(LOCALITY=None))
+    out = t.transform(_base_row(LOCALITY=None))
+    assert "eventCity" not in out.payload
+    assert out.payload["loadNumber"] == "2620444042"
 
 
-def test_skiprow_when_state_missing() -> None:
+def test_missing_state_omits_key_from_payload() -> None:
+    t = MilestonePayloadTransformer()
+    out = t.transform(_base_row(ADMINISTRATIVE_AREA1_CODE=None))
+    assert "eventState" not in out.payload
+
+
+def test_skiprow_when_ship_id_missing() -> None:
+    """loadNumber (Ship ID) is a bare-minimum field — row must be skipped."""
     t = MilestonePayloadTransformer()
     with pytest.raises(SkipRow):
-        t.transform(_base_row(ADMINISTRATIVE_AREA1_CODE=None))
+        t.transform(_base_row(SHIP_ID=None))
+
+
+def test_skiprow_when_actual_event_time_missing() -> None:
+    """time.dateTime is a bare-minimum field — row must be skipped."""
+    t = MilestonePayloadTransformer()
+    with pytest.raises(SkipRow):
+        t.transform(_base_row(ACTUAL_EVENT_AT_UTC=None))
 
 
 def test_full_payload_shape() -> None:
@@ -111,7 +127,21 @@ def test_natural_key_distinguishes_event_types_on_same_load() -> None:
     assert arrival != departure
 
 
-def test_null_sequence_coerced_to_one() -> None:
+def test_null_sequence_omits_key() -> None:
+    """No fake stop number — key absent when SEQUENCE is null."""
     t = MilestonePayloadTransformer()
     out = t.transform(_base_row(SEQUENCE=None))
-    assert out.payload["stopsequenceNumber"] == 1
+    assert "stopsequenceNumber" not in out.payload
+
+
+def test_zero_sequence_omits_key() -> None:
+    """No fake stop number — key absent when SEQUENCE is 0."""
+    t = MilestonePayloadTransformer()
+    out = t.transform(_base_row(SEQUENCE=0))
+    assert "stopsequenceNumber" not in out.payload
+
+
+def test_positive_sequence_passes_through() -> None:
+    t = MilestonePayloadTransformer()
+    out = t.transform(_base_row(SEQUENCE=5))
+    assert out.payload["stopsequenceNumber"] == 5

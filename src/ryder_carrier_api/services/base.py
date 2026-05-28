@@ -11,6 +11,8 @@ Each concrete puller orchestrates one cadence:
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor
+from concurrent.futures import as_completed, wait as futures_wait
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from enum import Enum
@@ -88,20 +90,27 @@ class PullerService(ABC):
     def run(self) -> RunResult:
         run_started = _now_utc()
         cursor_start = self._compute_cursor_start(run_started)
+        window_hours = round((run_started - cursor_start).total_seconds() / 3600, 2)
         log = logger.bind(
             pipeline=self.pipeline_name,
             cursor_start=cursor_start.isoformat(),
             run_started=run_started.isoformat(),
+            window_hours=window_hours,
         )
-        log.info("puller_run_start")
+        log.info(
+            "puller_run_start",
+            message=(
+                f"Running {self.pipeline_name} for window "
+                f"{cursor_start.isoformat()} → {run_started.isoformat()} "
+                f"({window_hours}h, {self._settings.ryder_max_concurrency} workers)"
+            ),
+        )
 
         seen = sent = dedup = dlq = invalid = transient = 0
+        max_workers = self._settings.ryder_max_concurrency
 
-        params = self._build_query_params(cursor_start, run_started)
-        self._log_candidate_counts(params, log=log)
-        for row in self._snowflake.fetch_rows(self._sql, params=params):
-            seen += 1
-            outcome = self._handle_row(row, log=log)
+        def _tally(outcome: str) -> None:
+            nonlocal sent, dedup, dlq, invalid, transient
             if outcome == "sent":
                 sent += 1
             elif outcome == "dedup":
@@ -112,6 +121,32 @@ class PullerService(ABC):
                 invalid += 1
             elif outcome == "transient":
                 transient += 1
+
+        def _drain(futures) -> None:  # accepts set or as_completed iterator
+            """Collect results from completed futures, update counters."""
+            nonlocal seen
+            for f in futures:
+                seen += 1
+                try:
+                    _tally(f.result())
+                except Exception as exc:
+                    log.exception("row_failed_unexpected", error=str(exc))
+                    dlq += 1
+
+        params = self._build_query_params(cursor_start, run_started)
+        self._log_candidate_counts(params, log=log)
+
+        # Process rows concurrently — at most max_workers in-flight at any time.
+        # Snowflake rows are fetched lazily so memory stays bounded regardless of
+        # total result size. Counter updates happen on the main thread (no locks needed).
+        pending: set = set()
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            for row in self._snowflake.fetch_rows(self._sql, params=params):
+                if len(pending) >= max_workers:
+                    done, pending = futures_wait(pending, return_when=FIRST_COMPLETED)
+                    _drain(done)
+                pending.add(executor.submit(self._handle_row, row, log=log))
+            _drain(as_completed(pending))
 
         if transient > 0:
             log.warning(
@@ -209,27 +244,49 @@ class PullerService(ABC):
 
     def _handle_row(self, row: dict[str, Any], *, log: structlog.stdlib.BoundLogger) -> str:
         """Process one row. Returns the outcome label for counters."""
-        log.info("snowflake_row", row=_jsonable(row))
+        jsonable_row = _jsonable(row)
+        ship_id = jsonable_row.get("SHIP_ID")
+        log.info(
+            "snowflake_row",
+            message=f"Pulled row from Snowflake (ship_id={ship_id})",
+            row=jsonable_row,
+        )
         try:
             transformed = self._transformer.transform(row)
         except SkipRow as exc:
-            log.warning("row_skipped_invalid", reason=str(exc))
+            log.warning(
+                "row_skipped_invalid",
+                message=f"Skipped row (ship_id={ship_id}): {exc}",
+                reason=str(exc),
+            )
             return "invalid"
 
         log.info(
             "ryder_payload",
+            message=(
+                f"Sending to Ryder /{self.endpoint.value} for ship_id={ship_id} "
+                f"(natural_key={transformed.natural_key})"
+            ),
             natural_key=transformed.natural_key,
             payload=transformed.payload,
         )
 
         existing = self._audit.get(self.pipeline_name, transformed.natural_key)
         if existing is not None:
-            log.info("row_skipped_dedup", natural_key=transformed.natural_key)
+            log.info(
+                "row_skipped_dedup",
+                message=f"Skipped (already sent) natural_key={transformed.natural_key}",
+                natural_key=transformed.natural_key,
+            )
             return "dedup"
 
         result = self._ryder.post(self.endpoint, transformed.payload)
         log.info(
             "ryder_response",
+            message=(
+                f"Ryder responded {result.response_code} "
+                f"({result.status.value}) for natural_key={transformed.natural_key}"
+            ),
             natural_key=transformed.natural_key,
             response_code=result.response_code,
             response_body=result.response_body[:2000],

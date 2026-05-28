@@ -42,42 +42,62 @@ _UNKNOWN_SENTINEL = "UNKNOWN"
 
 class TracePayloadTransformer(PayloadTransformer):
     def transform(self, row: dict[str, Any]) -> TransformedPayload:
-        resource_id, resource_type = _resolve_resource(row)
-        if resource_id is None:
-            raise SkipRow(f"No resource identifier for load {row.get('SHIP_ID')}")
+        # Bare-minimum guard — Ryder accepts the payload only if these are present:
+        #   loadNumber, traces[].time.dateTime, traces[].coordinate.{lat,lon}.
+        # Everything else (resourceId, resourceType, stopsequenceNumber, city, state)
+        # is sent when available, omitted otherwise — no fake fallbacks.
+        ship_id = row.get("SHIP_ID")
+        source_time = row.get("SOURCE_CREATED_AT_UTC")
+        lat = row.get("CURRENT_LOCATION_LATITUDE")
+        lon = row.get("CURRENT_LOCATION_LONGITUDE")
+        if not ship_id or source_time is None or lat is None or lon is None:
+            raise SkipRow(
+                f"Missing required field (loadNumber/dateTime/coordinate) "
+                f"for load {ship_id}"
+            )
 
-        load_number = str(row["SHIP_ID"])
-        source_time = row["SOURCE_CREATED_AT_UTC"]
+        load_number = str(ship_id)
         iana_tz = row.get("SOURCE_CREATED_AT_TIMEZONE")
-        stop_sequence = _coerce_stop_sequence(row.get("SEQUENCE"))
+        resource_id, resource_type = _resolve_resource(row)
 
-        payload = {
+        trace: dict[str, Any] = {
+            "time": {
+                "dateTime": format_ryder_datetime(source_time),
+                "timeZoneCode": short_timezone_code(source_time, iana_tz),
+                "timeZoneOffset": utc_offset_string(source_time, iana_tz),
+            },
+            "coordinate": {
+                "latitude": float(lat),
+                "longitude": float(lon),
+            },
+        }
+        if resource_id:
+            trace["resourceId"] = resource_id
+        if resource_type:
+            trace["resourceType"] = resource_type
+        stop_sequence_raw = row.get("SEQUENCE")
+        if stop_sequence_raw is not None and int(stop_sequence_raw) >= 1:
+            trace["stopsequenceNumber"] = int(stop_sequence_raw)
+
+        payload: dict[str, Any] = {
             "loadNumber": load_number,
             "source": "carrier",
-            "eventCity": row["CURRENT_LOCATION_CITY"],
-            "eventState": row["CURRENT_LOCATION_STATE"],
-            "traces": [
-                {
-                    "time": {
-                        "dateTime": format_ryder_datetime(source_time),
-                        "timeZoneCode": short_timezone_code(source_time, iana_tz),
-                        "timeZoneOffset": utc_offset_string(source_time, iana_tz),
-                    },
-                    "stopsequenceNumber": stop_sequence,
-                    "resourceId": resource_id,
-                    "resourceType": resource_type,
-                    "coordinate": {
-                        "latitude": float(row["CURRENT_LOCATION_LATITUDE"]),
-                        "longitude": float(row["CURRENT_LOCATION_LONGITUDE"]),
-                    },
-                }
-            ],
+            "traces": [trace],
         }
 
+        city = row.get("CURRENT_LOCATION_CITY")
+        if city:
+            payload["eventCity"] = city
+        state = row.get("CURRENT_LOCATION_STATE")
+        if state:
+            payload["eventState"] = state
+
+        # Natural key still uses resource_id when present, falls back to coords + time
+        # so unresolved-resource rows still get a stable, unique key for dedup.
         key = natural_key_hash(
             "trace",
             load_number,
-            resource_id,
+            resource_id or f"{lat},{lon}",
             source_time.isoformat(),
         )
         return TransformedPayload(natural_key=key, payload=payload)
@@ -121,14 +141,6 @@ def _first_nonempty(*values: str | None) -> str | None:
         if stripped and stripped.upper() != _UNKNOWN_SENTINEL:
             return stripped
     return None
-
-
-def _coerce_stop_sequence(value: Any) -> int:
-    """Ryder rejects 0 or null. Return at least 1."""
-    if value is None:
-        return 1
-    n = int(value)
-    return n if n >= 1 else 1
 
 
 class SkipRow(Exception):  # noqa: N818 — existing name; renaming ripples across imports

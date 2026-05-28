@@ -57,33 +57,47 @@ DEFAULT_REASON_CODE = "NS"
 
 class MilestonePayloadTransformer(PayloadTransformer):
     def transform(self, row: dict[str, Any]) -> TransformedPayload:
-        load_number = str(row["SHIP_ID"])
+        # Bare-minimum guard — only skip the row when one of Ryder's hard requirements
+        # is missing. Other fields (city/state/reason/stopsequence) are still sent
+        # as-is when absent, since Ryder accepts the payload without them.
+        ship_id = row.get("SHIP_ID")
+        actual_time = row.get("ACTUAL_EVENT_AT_UTC")
         event_type = row.get("EVENT_TYPE") or ""
+        if not ship_id or actual_time is None:
+            raise SkipRow(
+                f"Missing required field (loadNumber/dateTime) "
+                f"for load {ship_id}, event {event_type}"
+            )
+
+        load_number = str(ship_id)
         event_code = EVENT_TYPE_TO_CODE.get(event_type, "A9")
         reason_code = row.get("LATE_ARRIVAL_REASON_CODE") or DEFAULT_REASON_CODE
-        actual_time = row["ACTUAL_EVENT_AT_UTC"]
         iana_tz = row.get("ACTUAL_TIMEZONE")
-        stop_sequence = _coerce_stop_sequence(row.get("SEQUENCE"))
 
-        city = row.get("LOCALITY")
-        state = row.get("ADMINISTRATIVE_AREA1_CODE")
-        if not city or not state:
-            raise SkipRow(f"Missing city/state for load {load_number}, event {event_type}")
-
-        payload = {
+        payload: dict[str, Any] = {
             "eventCode": event_code,
             "reasonCode": reason_code,
             "loadNumber": load_number,
             "source": "carrier",
-            "eventCity": city,
-            "eventState": state,
             "time": {
                 "dateTime": format_ryder_datetime(actual_time),
                 "timeZoneCode": short_timezone_code(actual_time, iana_tz),
                 "timeZoneOffset": utc_offset_string(actual_time, iana_tz),
             },
-            "stopsequenceNumber": stop_sequence,
         }
+
+        # Optional fields — only include when we have a real value. No fake fallbacks.
+        city = row.get("LOCALITY")
+        if city:
+            payload["eventCity"] = city
+
+        state = row.get("ADMINISTRATIVE_AREA1_CODE")
+        if state:
+            payload["eventState"] = state
+
+        stop_sequence_raw = row.get("SEQUENCE")
+        if stop_sequence_raw is not None and int(stop_sequence_raw) >= 1:
+            payload["stopsequenceNumber"] = int(stop_sequence_raw)
 
         key = natural_key_hash(
             "milestone",
@@ -92,10 +106,3 @@ class MilestonePayloadTransformer(PayloadTransformer):
             actual_time.isoformat(),
         )
         return TransformedPayload(natural_key=key, payload=payload)
-
-
-def _coerce_stop_sequence(value: Any) -> int:
-    if value is None:
-        return 1
-    n = int(value)
-    return n if n >= 1 else 1

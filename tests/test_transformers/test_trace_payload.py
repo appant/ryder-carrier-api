@@ -110,31 +110,54 @@ def test_empty_string_treated_as_null() -> None:
     assert out.payload["traces"][0]["resourceId"] == "REAL456"
 
 
-def test_skiprow_when_no_resource_identifier() -> None:
+def test_no_resource_identifier_omits_keys_but_still_sends() -> None:
+    """resourceId/resourceType are not bare-min — omit them, payload still goes."""
     t = TracePayloadTransformer()
-    with pytest.raises(SkipRow):
-        t.transform(
-            _base_row(
-                TRACKING_UPDATES_TRAILER_NUMBER=None,
-                STOP_EVENTS_TRAILER_NUMBERS_FIRST=None,
-                DRIVER_ASSIGNMENTS_TRACTOR_IDENTIFIER=None,
-                STOP_EVENTS_TRACTOR_NUMBER=None,
-                DRIVER_ASSIGNMENTS_DRIVER1_NAME=None,
-            )
+    out = t.transform(
+        _base_row(
+            TRACKING_UPDATES_TRAILER_NUMBER=None,
+            STOP_EVENTS_TRAILER_NUMBERS_FIRST=None,
+            DRIVER_ASSIGNMENTS_TRACTOR_IDENTIFIER=None,
+            STOP_EVENTS_TRACTOR_NUMBER=None,
+            DRIVER_ASSIGNMENTS_DRIVER1_NAME=None,
         )
+    )
+    trace = out.payload["traces"][0]
+    assert "resourceId" not in trace
+    assert "resourceType" not in trace
+    assert trace["coordinate"] == {"latitude": 41.844043, "longitude": -87.736063}
 
 
-def test_null_sequence_coerced_to_one() -> None:
+def test_null_sequence_omits_key() -> None:
+    """No fake stop number — key absent when SEQUENCE is null."""
     t = TracePayloadTransformer()
     out = t.transform(_base_row(SEQUENCE=None))
-    assert out.payload["traces"][0]["stopsequenceNumber"] == 1
+    assert "stopsequenceNumber" not in out.payload["traces"][0]
 
 
-def test_zero_sequence_coerced_to_one() -> None:
-    """Ryder rejects 0."""
+def test_zero_sequence_omits_key() -> None:
+    """No fake stop number — key absent when SEQUENCE is 0."""
     t = TracePayloadTransformer()
     out = t.transform(_base_row(SEQUENCE=0))
-    assert out.payload["traces"][0]["stopsequenceNumber"] == 1
+    assert "stopsequenceNumber" not in out.payload["traces"][0]
+
+
+def test_skiprow_when_ship_id_missing() -> None:
+    t = TracePayloadTransformer()
+    with pytest.raises(SkipRow):
+        t.transform(_base_row(SHIP_ID=None))
+
+
+def test_skiprow_when_coordinates_missing() -> None:
+    t = TracePayloadTransformer()
+    with pytest.raises(SkipRow):
+        t.transform(_base_row(CURRENT_LOCATION_LATITUDE=None))
+
+
+def test_skiprow_when_source_time_missing() -> None:
+    t = TracePayloadTransformer()
+    with pytest.raises(SkipRow):
+        t.transform(_base_row(SOURCE_CREATED_AT_UTC=None))
 
 
 def test_natural_key_stable_for_same_inputs() -> None:

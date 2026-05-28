@@ -75,7 +75,7 @@ class AppSettings(BaseSettings):
 
     # --- Customer filter ---
     ryder_customer_codes: str = Field(
-        default="AMEBOTFRTX,DRPEPPFRTX,KEURIGFRTX,KEUDRPFRTX,MOTTSFRTX,ELECTRONOMI",
+        default="ELECTRONOMI",
         description="Comma-separated list of Snowflake CUSTOMER_CODE values to include.",
     )
 
