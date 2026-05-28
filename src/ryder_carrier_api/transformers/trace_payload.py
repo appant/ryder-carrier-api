@@ -59,7 +59,7 @@ class TracePayloadTransformer(PayloadTransformer):
             "traces": [
                 {
                     "time": {
-                        "dateTime": format_ryder_datetime(source_time, iana_tz),
+                        "dateTime": format_ryder_datetime(source_time),
                         "timeZoneCode": short_timezone_code(source_time, iana_tz),
                         "timeZoneOffset": utc_offset_string(source_time, iana_tz),
                     },

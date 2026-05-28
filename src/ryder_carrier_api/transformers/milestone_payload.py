@@ -78,7 +78,7 @@ class MilestonePayloadTransformer(PayloadTransformer):
             "eventCity": city,
             "eventState": state,
             "time": {
-                "dateTime": format_ryder_datetime(actual_time, iana_tz),
+                "dateTime": format_ryder_datetime(actual_time),
                 "timeZoneCode": short_timezone_code(actual_time, iana_tz),
                 "timeZoneOffset": utc_offset_string(actual_time, iana_tz),
             },

@@ -41,7 +41,7 @@ def test_happy_path_trailer_resolution() -> None:
     assert trace["resourceId"] == "AMBIMUS53"
     assert trace["resourceType"] == "Trailer"
     assert trace["stopsequenceNumber"] == 1
-    assert trace["time"]["dateTime"] == "2026-04-02T07:00:00.0000000-05:00"
+    assert trace["time"]["dateTime"] == "2026-04-02T12:00:00Z"
     assert trace["time"]["timeZoneCode"] == "CDT"
     assert trace["time"]["timeZoneOffset"] == "UTC-5"
     assert trace["coordinate"] == {"latitude": 41.844043, "longitude": -87.736063}

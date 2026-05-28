@@ -1,9 +1,11 @@
 """Timezone helpers for Ryder payloads.
 
 Ryder requires:
-  - `dateTime`: ISO 8601 with offset (e.g. "2026-05-26T01:00:00.0000000+00:00")
-  - `timeZoneCode`: short code (e.g. "EST", "CST", "HST")
-  - `timeZoneOffset`: e.g. "UTC-5" or "UTC-10"
+  - `dateTime`: UTC, whole-second precision, trailing 'Z' (e.g. "2026-05-19T21:09:00Z").
+    The API validates against ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$
+    so no fractional seconds and no numeric offset are allowed.
+  - `timeZoneCode`: short code for the local zone (e.g. "EST", "CST", "HST")
+  - `timeZoneOffset`: local zone offset (e.g. "UTC-5" or "UTC-10")
 
 MasterMind stores `*_AT_UTC` as naive UTC timestamps and `*_TIMEZONE` as
 IANA names like `America/Chicago`. We convert here.
@@ -22,17 +24,17 @@ def to_utc_aware(value: datetime) -> datetime:
     return value.astimezone(UTC)
 
 
-def format_ryder_datetime(value: datetime, iana_tz_name: str | None) -> str:
-    """Format a UTC datetime for the Ryder API.
+def format_ryder_datetime(value: datetime) -> str:
+    """Format a datetime for the Ryder API `dateTime` field.
 
-    Ryder expects the value in the local timezone (per their spec the
-    'Update must be provided in Local Date-Time').
-    Output example: '2026-05-26T01:00:00.0000000+00:00'
+    Ryder validates this field against
+    ``^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$`` — UTC,
+    whole-second precision, trailing 'Z'. No fractional seconds, no offset.
+    The local zone is reported separately via `timeZoneCode` / `timeZoneOffset`.
+
+    Output example: '2026-05-19T21:09:00Z'
     """
-    utc_value = to_utc_aware(value)
-    local = utc_value.astimezone(ZoneInfo(iana_tz_name)) if iana_tz_name else utc_value
-    # Pad microseconds to 7 digits to match Ryder's example format.
-    return local.strftime("%Y-%m-%dT%H:%M:%S.%f0") + _offset_string(local)
+    return to_utc_aware(value).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def short_timezone_code(value: datetime, iana_tz_name: str | None) -> str:
@@ -60,14 +62,3 @@ def utc_offset_string(value: datetime, iana_tz_name: str | None) -> str:
     if minutes == 0:
         return f"UTC{sign}{abs(hours)}"
     return f"UTC{sign}{abs(hours)}:{minutes:02d}"
-
-
-def _offset_string(local: datetime) -> str:
-    offset = local.utcoffset()
-    if offset is None:
-        return "+00:00"
-    total_minutes = int(offset.total_seconds() // 60)
-    sign = "+" if total_minutes >= 0 else "-"
-    hours = abs(total_minutes) // 60
-    minutes = abs(total_minutes) % 60
-    return f"{sign}{hours:02d}:{minutes:02d}"

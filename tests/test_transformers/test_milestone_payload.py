@@ -98,7 +98,7 @@ def test_full_payload_shape() -> None:
     assert p["eventState"] == "IL"
     assert p["stopsequenceNumber"] == 1
     assert p["time"] == {
-        "dateTime": "2026-04-02T07:00:00.0000000-05:00",
+        "dateTime": "2026-04-02T12:00:00Z",
         "timeZoneCode": "CDT",
         "timeZoneOffset": "UTC-5",
     }

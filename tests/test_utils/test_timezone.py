@@ -26,26 +26,27 @@ def test_aware_converted_to_utc() -> None:
 
 
 # --- format_ryder_datetime ---
+# Ryder validates dateTime against ^...T..:..:..Z$ — UTC, whole seconds, trailing 'Z'.
+# The local zone is carried by timeZoneCode / timeZoneOffset, not by dateTime.
 
 
-def test_format_chicago_in_dst() -> None:
-    """April is CDT (UTC-5), not CST (UTC-6)."""
+def test_format_emits_utc_zulu() -> None:
+    """Naive values are treated as UTC and emitted as 'YYYY-MM-DDTHH:MM:SSZ'."""
     utc = datetime(2026, 4, 2, 12, 0, 0)
-    out = format_ryder_datetime(utc, "America/Chicago")
-    assert out == "2026-04-02T07:00:00.0000000-05:00"
+    assert format_ryder_datetime(utc) == "2026-04-02T12:00:00Z"
 
 
-def test_format_no_tz_returns_utc() -> None:
-    utc = datetime(2026, 4, 2, 12, 0, 0)
-    out = format_ryder_datetime(utc, None)
-    assert out == "2026-04-02T12:00:00.0000000+00:00"
+def test_format_drops_fractional_seconds() -> None:
+    utc = datetime(2026, 4, 13, 11, 30, 0, 123456)
+    assert format_ryder_datetime(utc) == "2026-04-13T11:30:00Z"
 
 
-def test_format_new_york_in_dst() -> None:
-    """April is EDT (UTC-4)."""
-    utc = datetime(2026, 4, 13, 11, 30, 0)
-    out = format_ryder_datetime(utc, "America/New_York")
-    assert out == "2026-04-13T07:30:00.0000000-04:00"
+def test_format_converts_aware_input_to_utc() -> None:
+    """A non-UTC aware datetime is converted to UTC before formatting."""
+    from zoneinfo import ZoneInfo
+
+    aware = datetime(2026, 4, 2, 7, 0, 0, tzinfo=ZoneInfo("America/Chicago"))
+    assert format_ryder_datetime(aware) == "2026-04-02T12:00:00Z"  # 07:00 CDT = 12:00 UTC
 
 
 # --- short_timezone_code ---

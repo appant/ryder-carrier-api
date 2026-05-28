@@ -1,8 +1,12 @@
 """Fetch ONE real row from Mastermind and show the Ryder payload it would produce.
 
 Usage (defaults to trace; pass `milestone` for the other pipeline):
-    python scripts/sample_one_row.py            # → trace
-    python scripts/sample_one_row.py milestone
+    python scripts/sample_one_row.py                 # → trace, last 24h
+    python scripts/sample_one_row.py milestone       # → milestone, last 24h
+    python scripts/sample_one_row.py milestone 720   # → milestone, last 720h (30d)
+
+The optional second arg widens the lookback window (hours) — handy when a
+test share has no recent data.
 
 The database queried is whatever SNOWFLAKE_DATABASE points at — override with
 docker compose to flip between dev/prod shares:
@@ -50,6 +54,8 @@ def main() -> int:
         print(f"unknown pipeline: {pipeline}. use 'trace' or 'milestone'.")
         return 2
 
+    lookback_hours = int(sys.argv[2]) if len(sys.argv) > 2 else 24
+
     load_dotenv()
     settings = get_settings()
     secrets = _build_secret_provider(settings)
@@ -63,7 +69,7 @@ def main() -> int:
 
     now = datetime.now(tz=UTC)
     params = {
-        "cursor_start": now - timedelta(hours=24),
+        "cursor_start": now - timedelta(hours=lookback_hours),
         "run_started": now,
         "customer_codes": tuple(settings.customer_codes),
     }
