@@ -44,9 +44,9 @@ class TracePayloadTransformer(PayloadTransformer):
     def transform(self, row: dict[str, Any]) -> TransformedPayload:
         resource_id, resource_type = _resolve_resource(row)
         if resource_id is None:
-            raise SkipRow(f"No resource identifier for load {row.get('CUSTOMER_ORDER_NUMBER')}")
+            raise SkipRow(f"No resource identifier for load {row.get('SHIP_ID')}")
 
-        load_number = str(row["CUSTOMER_ORDER_NUMBER"])
+        load_number = str(row["SHIP_ID"])
         source_time = row["SOURCE_CREATED_AT_UTC"]
         iana_tz = row.get("SOURCE_CREATED_AT_TIMEZONE")
         stop_sequence = _coerce_stop_sequence(row.get("SEQUENCE"))

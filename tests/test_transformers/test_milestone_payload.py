@@ -10,7 +10,7 @@ from ryder_carrier_api.transformers.trace_payload import SkipRow
 
 def _base_row(**overrides):
     row = {
-        "CUSTOMER_ORDER_NUMBER": "0034759307",
+        "SHIP_ID": "2620444042",
         "EVENT_TYPE": "Driver Arrival",
         "LATE_ARRIVAL_REASON_CODE": None,
         "ACTUAL_EVENT_AT_UTC": datetime(2026, 4, 2, 12, 0, 0),
@@ -92,7 +92,7 @@ def test_full_payload_shape() -> None:
         "time",
         "stopsequenceNumber",
     }
-    assert p["loadNumber"] == "0034759307"
+    assert p["loadNumber"] == "2620444042"
     assert p["source"] == "carrier"
     assert p["eventCity"] == "CHICAGO"
     assert p["eventState"] == "IL"

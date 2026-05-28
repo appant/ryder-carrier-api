@@ -72,6 +72,7 @@ class PullerService(ABC):
         audit: AuditStore,
         transformer: PayloadTransformer,
         sql: str,
+        candidates_sql: str | None = None,
     ) -> None:
         self._settings = settings
         self._snowflake = snowflake
@@ -80,6 +81,7 @@ class PullerService(ABC):
         self._audit = audit
         self._transformer = transformer
         self._sql = sql
+        self._candidates_sql = candidates_sql
 
     # --- public ---
 
@@ -96,6 +98,7 @@ class PullerService(ABC):
         seen = sent = dedup = dlq = invalid = transient = 0
 
         params = self._build_query_params(cursor_start, run_started)
+        self._log_candidate_counts(params, log=log)
         for row in self._snowflake.fetch_rows(self._sql, params=params):
             seen += 1
             outcome = self._handle_row(row, log=log)
@@ -179,6 +182,30 @@ class PullerService(ABC):
         unclamped = wm.last_synced_at_utc - overlap
         floor = run_started - max_lookback
         return max(unclamped, floor)
+
+    def _log_candidate_counts(
+        self, params: dict[str, Any], *, log: structlog.stdlib.BoundLogger
+    ) -> None:
+        """Emit a `puller_candidates` log line with before/after Ship ID counts.
+
+        Skipped when either:
+          - the diagnostics flag is off (flip after Ship ID remap is stable), or
+          - the subclass didn't supply a candidates SQL.
+
+        Any query failure is logged but never aborts the run — diagnostics
+        must never block the real pull.
+        """
+        if not self._settings.enable_candidate_diagnostics or self._candidates_sql is None:
+            return
+        try:
+            rows = list(self._snowflake.fetch_rows(self._candidates_sql, params=params))
+        except Exception as exc:
+            log.warning("puller_candidates_query_failed", error=str(exc))
+            return
+        if not rows:
+            log.info("puller_candidates", rows_before_ship_id_filter=0, rows_with_ship_id=0)
+            return
+        log.info("puller_candidates", **{k.lower(): v for k, v in rows[0].items()})
 
     def _handle_row(self, row: dict[str, Any], *, log: structlog.stdlib.BoundLogger) -> str:
         """Process one row. Returns the outcome label for counters."""

@@ -4,9 +4,13 @@
 --   %(cursor_start)s    : timestamp lower bound (last_synced minus overlap)
 --   %(run_started)s     : timestamp upper bound (now)
 --   %(customer_codes)s  : tuple of customer codes to include
+--
+-- loadNumber source: ORDER_REFERENCES.VALUE where REFERENCE_TYPE = 'Ship ID'.
+-- Orders may have multiple Ship ID rows — pick most-recent by UPDATED_AT_UTC.
+-- The inner JOIN on `sid` drops rows without a Ship ID (no fallback).
 -- =============================================================================
 SELECT
-    o.CUSTOMER_ORDER_NUMBER,
+    sid.SHIP_ID,
     tu.CURRENT_LOCATION_CITY,
     tu.CURRENT_LOCATION_STATE,
     tu.SOURCE_CREATED_AT_UTC,
@@ -22,6 +26,16 @@ SELECT
 FROM TRACKING_UPDATES tu
 JOIN ROUTES r ON tu.ROUTE_ID = r.ROUTE_ID
 JOIN ORDERS o ON r.LOAD_NUMBER = o.LOAD_NUMBER
+JOIN (
+    SELECT ORDER_ID,
+           MAX_BY(VALUE, UPDATED_AT_UTC) AS SHIP_ID
+    FROM ORDER_REFERENCES
+    WHERE REFERENCE_TYPE = 'Ship ID'
+      AND IS_DELETED = FALSE
+      AND VALUE IS NOT NULL
+      AND TRIM(VALUE) <> ''
+    GROUP BY ORDER_ID
+) sid ON sid.ORDER_ID = o.ORDER_ID
 LEFT JOIN ROUTE_STOPS rs ON tu.STOP_ID = rs.ROUTE_STOP_ID
 LEFT JOIN DRIVER_ASSIGNMENTS da
        ON tu.ROUTE_ID = da.ROUTE_ID
@@ -39,5 +53,4 @@ WHERE o.CUSTOMER_CODE IN (%(customer_codes)s)
   AND tu.IS_DELETED = FALSE
   AND tu.CURRENT_LOCATION_LATITUDE IS NOT NULL
   AND tu.CURRENT_LOCATION_LONGITUDE IS NOT NULL
-  AND o.CUSTOMER_ORDER_NUMBER IS NOT NULL
 ORDER BY tu.SOURCE_CREATED_AT_UTC ASC

@@ -10,7 +10,7 @@ from ryder_carrier_api.transformers.trace_payload import (
 
 def _base_row(**overrides):
     row = {
-        "CUSTOMER_ORDER_NUMBER": "0034759307",
+        "SHIP_ID": "2620444042",
         "CURRENT_LOCATION_CITY": "CHICAGO",
         "CURRENT_LOCATION_STATE": "IL",
         "SOURCE_CREATED_AT_UTC": datetime(2026, 4, 2, 12, 0, 0),
@@ -32,7 +32,7 @@ def test_happy_path_trailer_resolution() -> None:
     t = TracePayloadTransformer()
     out = t.transform(_base_row())
     p = out.payload
-    assert p["loadNumber"] == "0034759307"
+    assert p["loadNumber"] == "2620444042"
     assert p["source"] == "carrier"
     assert p["eventCity"] == "CHICAGO"
     assert p["eventState"] == "IL"

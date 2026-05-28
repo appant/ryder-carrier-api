@@ -57,7 +57,7 @@ DEFAULT_REASON_CODE = "NS"
 
 class MilestonePayloadTransformer(PayloadTransformer):
     def transform(self, row: dict[str, Any]) -> TransformedPayload:
-        load_number = str(row["CUSTOMER_ORDER_NUMBER"])
+        load_number = str(row["SHIP_ID"])
         event_type = row.get("EVENT_TYPE") or ""
         event_code = EVENT_TYPE_TO_CODE.get(event_type, "A9")
         reason_code = row.get("LATE_ARRIVAL_REASON_CODE") or DEFAULT_REASON_CODE

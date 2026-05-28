@@ -86,6 +86,7 @@ def _run_trace(settings: AppSettings) -> None:
             audit=_build_audit_store(settings),
             transformer=TracePayloadTransformer(),
             sql=_load_sql("trace_query.sql"),
+            candidates_sql=_load_sql("trace_candidates_query.sql"),
         )
         service.run()
 
@@ -106,6 +107,7 @@ def _run_milestone(settings: AppSettings) -> None:
             audit=_build_audit_store(settings),
             transformer=MilestonePayloadTransformer(),
             sql=_load_sql("milestone_query.sql"),
+            candidates_sql=_load_sql("milestone_candidates_query.sql"),
         )
         service.run()
 

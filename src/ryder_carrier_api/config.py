@@ -75,7 +75,7 @@ class AppSettings(BaseSettings):
 
     # --- Customer filter ---
     ryder_customer_codes: str = Field(
-        default="AMEBOTFRTX,DRPEPPFRTX,KEURIGFRTX,KEUDRPFRTX,MOTTSFRTX",
+        default="AMEBOTFRTX,DRPEPPFRTX,KEURIGFRTX,KEUDRPFRTX,MOTTSFRTX,ELECTRONOMI",
         description="Comma-separated list of Snowflake CUSTOMER_CODE values to include.",
     )
 
@@ -93,6 +93,11 @@ class AppSettings(BaseSettings):
     # --- Watermark safety ---
     watermark_overlap_minutes: int = 5
     watermark_max_lookback_hours: int = 72
+
+    # --- Diagnostic candidate-count query ---
+    # Flip to False once the Ship ID remap is proven stable — avoids an extra
+    # Snowflake aggregate query per run.
+    enable_candidate_diagnostics: bool = True
 
     @property
     def customer_codes(self) -> list[str]:
