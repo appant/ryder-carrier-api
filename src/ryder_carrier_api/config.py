@@ -6,19 +6,19 @@ so business logic stays free of environment-specific values.
 
 from __future__ import annotations
 
-from enum import Enum
+from enum import StrEnum
 from functools import lru_cache
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
-class Environment(str, Enum):
+class Environment(StrEnum):
     DEV = "dev"
     PROD = "prod"
 
 
-class SnowflakeAuthMethod(str, Enum):
+class SnowflakeAuthMethod(StrEnum):
     PASSWORD = "password"
     KEYPAIR = "keypair"
 

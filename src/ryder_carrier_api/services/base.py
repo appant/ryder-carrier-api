@@ -11,11 +11,11 @@ Each concrete puller orchestrates one cadence:
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor
-from concurrent.futures import as_completed, wait as futures_wait
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, as_completed
+from concurrent.futures import wait as futures_wait
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 import structlog
@@ -37,7 +37,7 @@ from ..utils.logging import get_logger
 logger = get_logger(__name__)
 
 
-class RunStatus(str, Enum):
+class RunStatus(StrEnum):
     SUCCESS = "success"
     FAILED_TRANSIENT = "failed_transient"
     NO_DATA = "no_data"
@@ -124,7 +124,7 @@ class PullerService(ABC):
 
         def _drain(futures) -> None:  # accepts set or as_completed iterator
             """Collect results from completed futures, update counters."""
-            nonlocal seen
+            nonlocal seen, dlq
             for f in futures:
                 seen += 1
                 try:

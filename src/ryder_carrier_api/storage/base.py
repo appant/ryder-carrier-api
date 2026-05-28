@@ -9,7 +9,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 
 # =============================================================================
 # Watermark
@@ -41,7 +41,7 @@ class WatermarkStore(ABC):
 # =============================================================================
 
 
-class AuditStatus(str, Enum):
+class AuditStatus(StrEnum):
     """Status of a row's delivery attempt.
 
     `sent` and `failed_permanently` are terminal: those rows are skipped on

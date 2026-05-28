@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import threading
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 from typing import Any, ClassVar
 
 import httpx
@@ -32,14 +32,14 @@ from ..config import AppSettings
 from ..secrets.base import SecretProvider
 
 
-class RyderEndpoint(str, Enum):
+class RyderEndpoint(StrEnum):
     """Logical endpoint names; the client maps them to URL paths."""
 
     MILESTONE = "milestone"
     TRACE = "trace"
 
 
-class RyderResultStatus(str, Enum):
+class RyderResultStatus(StrEnum):
     SENT = "sent"
     FAILED_PERMANENTLY = "failed_permanently"
     FAILED_TRANSIENT = "failed_transient"
