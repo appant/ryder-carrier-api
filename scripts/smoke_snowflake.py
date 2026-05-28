@@ -8,6 +8,7 @@ Goes through the same _build_secret_provider + build_auth_provider +
 SnowflakeClient path the real jobs use, so if this succeeds the
 trace/milestone jobs will too.
 """
+
 from __future__ import annotations
 
 import sys
@@ -35,9 +36,11 @@ def main() -> int:
     print()
 
     with SnowflakeClient(settings, auth) as sf:
-        rows = list(sf.fetch_rows(
-            "SELECT CURRENT_USER() AS u, CURRENT_ROLE() AS r, CURRENT_DATABASE() AS d"
-        ))
+        rows = list(
+            sf.fetch_rows(
+                "SELECT CURRENT_USER() AS u, CURRENT_ROLE() AS r, CURRENT_DATABASE() AS d"
+            )
+        )
         print("connected:", rows[0])
 
     return 0

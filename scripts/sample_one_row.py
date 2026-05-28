@@ -16,6 +16,7 @@ docker compose to flip between dev/prod shares:
 
 No data is POSTed anywhere. Read-only sample.
 """
+
 from __future__ import annotations
 
 import json

@@ -5,6 +5,7 @@ uses and sample a few rows. Nothing is written or POSTed.
 
     docker compose run --rm --no-deps --entrypoint python app scripts/explore_order_refs.py
 """
+
 from __future__ import annotations
 
 import json

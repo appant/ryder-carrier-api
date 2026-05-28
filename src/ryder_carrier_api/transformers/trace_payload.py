@@ -52,8 +52,7 @@ class TracePayloadTransformer(PayloadTransformer):
         lon = row.get("CURRENT_LOCATION_LONGITUDE")
         if not ship_id or source_time is None or lat is None or lon is None:
             raise SkipRow(
-                f"Missing required field (loadNumber/dateTime/coordinate) "
-                f"for load {ship_id}"
+                f"Missing required field (loadNumber/dateTime/coordinate) " f"for load {ship_id}"
             )
 
         load_number = str(ship_id)

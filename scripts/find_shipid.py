@@ -4,6 +4,7 @@
 
 Nothing is written or POSTed.
 """
+
 from __future__ import annotations
 
 import json
