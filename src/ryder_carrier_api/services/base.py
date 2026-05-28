@@ -122,7 +122,7 @@ class PullerService(ABC):
             elif outcome == "transient":
                 transient += 1
 
-        def _drain(futures) -> None:  # accepts set or as_completed iterator
+        def _drain(futures: Any) -> None:  # accepts set or as_completed iterator
             """Collect results from completed futures, update counters."""
             nonlocal seen, dlq
             for f in futures:
@@ -139,7 +139,7 @@ class PullerService(ABC):
         # Process rows concurrently — at most max_workers in-flight at any time.
         # Snowflake rows are fetched lazily so memory stays bounded regardless of
         # total result size. Counter updates happen on the main thread (no locks needed).
-        pending: set = set()
+        pending: set[Any] = set()
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             for row in self._snowflake.fetch_rows(self._sql, params=params):
                 if len(pending) >= max_workers:
