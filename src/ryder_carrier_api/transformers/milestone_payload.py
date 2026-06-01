@@ -51,6 +51,77 @@ EVENT_TYPE_TO_CODE: dict[str, str] = {
     # Defaults to "A9" (General Status Update) if not mapped
 }
 
+# Mapping from MasterMind LATE_ARRIVAL_REASON_CODE → Ryder EDI214 reasonCode.
+# Source: api_mappings/milestone_api_mapping.md
+REASON_CODE_MAP: dict[str, str] = {
+    "Accident": "AF",
+    "Alternate Carrier Delivered - Carrier recovered load": "DP11",
+    "Alternate Carrier Delivery": "DP11",
+    "Auto Update - Reason Unknown": "BG",
+    "Boarder Clearance": "CA",
+    "Border Clearance": "CA",
+    "Carrier - Hours of Service": "AH",
+    "Carrier Dispatch Error": "D1",
+    "Carrier Dispatch Error - Poor planning, incorrect dispatch": "D1",
+    "Carrier Keying Error": "D1",
+    "Carrier non compliance with shipper/consignee": "BG",
+    "Consignee Related": "AG",
+    "Customer Requested Future Delivery": "AD",
+    "Customer Strike": "BG",
+    "Customer Vacation": "B1",
+    "Damaged": "A9",
+    "Driver Not Available": "D2",
+    "Driver Related": "AH",
+    "Driver related - Driver overslept, misread information, arrived to incorrect location": "AH",
+    "Drop Trailer": "BG",
+    "Exceeds Service Limitations": "BG",
+    "Flatcar Shortage": "BO",
+    "Held Pending Appointment": "HB",
+    "Held for Full Carrier Load": "HB",
+    "Held per Shipper": "AM",
+    "Hold due to Customs Documentation Problems": "AS",
+    "Holiday - Closed": "AN",
+    "Incorrect Address": "CR1",
+    "Insufficient Delivery Time": "BH",
+    "Insufficient Pickup Time": "AX",
+    "Insufficient Pickup/Lead Time": "AX",
+    "Insufficient Time to Complete Delivery": "BH",
+    "International Non-carrier Delay": "CA",
+    "Load Shifted": "BP",
+    "Mechanical Breakdown": "AI",
+    "Mechanical Breakdown - Tractor / Trailer / mechanical issue": "AI",
+    "Mis-sort": "BG",
+    "Missed Delivery": "BH",
+    "Missed Pick Up - Carrier missed original scheduled pickup appointment": "D1",
+    "Missed Pickup": "D1",
+    "Missing Documents": "PW",
+    "No Requested Arrival Date Provided by Shipper": "AM",
+    "No Requested Arrival Time Provided by Shipper": "AM",
+    "Non-Express Clearance Delay": "CA",
+    "Normal Shipment": "NS",
+    "Normal Status": "NS",
+    "Normal Status (NS)": "NS",
+    "Other": "BG",
+    "Other - Carrier Related": "BG",
+    "PAST CUT OFF TIME / SHORT LEAD TIME": "AW",
+    "Past Cut-off Time": "AW",
+    "Previous Stop - Driver held up on previous load": "AL",
+    "Previous Stop Caused Delay": "AL",
+    "Railroad Failed to Meet Schedule": "BO",
+    "Refused by Customer": "BS",
+    "Road Conditions": "BE",
+    "Road Conditions - Traffic or construction": "BE",
+    "Shipment Overweight": "BQ",
+    "Shipper Related": "AM",
+    "Trailer Class Not Available": "NE",
+    "Trailer Not Usable Due to Prior Product": "NE",
+    "Trailer not Available": "NE",
+    "Unable to Locate": "BG",
+    "Waiting Shipping Instructions": "AM",
+    "Waiting for Customer Pick-up": "C1",
+    "Weather or Natural Disaster Related": "AO",
+}
+
 # Default reason code when MasterMind doesn't provide one.
 DEFAULT_REASON_CODE = "NS"
 
@@ -71,7 +142,12 @@ class MilestonePayloadTransformer(PayloadTransformer):
 
         load_number = str(ship_id)
         event_code = EVENT_TYPE_TO_CODE.get(event_type, "A9")
-        reason_code = row.get("LATE_ARRIVAL_REASON_CODE") or DEFAULT_REASON_CODE
+        raw_reason = row.get("LATE_ARRIVAL_REASON_CODE")
+        reason_code = (
+            REASON_CODE_MAP.get(raw_reason, DEFAULT_REASON_CODE)
+            if raw_reason
+            else DEFAULT_REASON_CODE
+        )
         iana_tz = row.get("ACTUAL_TIMEZONE")
 
         payload: dict[str, Any] = {

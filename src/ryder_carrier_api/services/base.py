@@ -107,16 +107,19 @@ class PullerService(ABC):
         )
 
         seen = sent = dedup = dlq = invalid = transient = 0
+        dlq_codes: dict[str, int] = {}
         max_workers = self._settings.ryder_max_concurrency
 
         def _tally(outcome: str) -> None:
             nonlocal sent, dedup, dlq, invalid, transient
             if outcome == "sent":
                 sent += 1
+            elif outcome.startswith("dlq"):
+                dlq += 1
+                reason = outcome[4:] if ":" in outcome else "unknown"
+                dlq_codes[reason] = dlq_codes.get(reason, 0) + 1
             elif outcome == "dedup":
                 dedup += 1
-            elif outcome == "dlq":
-                dlq += 1
             elif outcome == "invalid":
                 invalid += 1
             elif outcome == "transient":
@@ -181,6 +184,7 @@ class PullerService(ABC):
             rows_sent=sent,
             rows_skipped_dedup=dedup,
             rows_dlq=dlq,
+            rows_dlq_by_reason=dlq_codes,
             rows_skipped_invalid=invalid,
         )
         return RunResult(
@@ -326,7 +330,7 @@ class PullerService(ABC):
                     failed_at_utc=_now_utc(),
                 )
             )
-            return "dlq"
+            return f"dlq:{result.response_code}"
 
         # Transient — don't write audit; the tick will fail to advance and replay.
         log.warning(

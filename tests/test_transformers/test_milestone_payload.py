@@ -60,10 +60,16 @@ def test_default_reason_code_when_null() -> None:
     assert out.payload["reasonCode"] == "NS"
 
 
-def test_reason_code_passed_through_when_set() -> None:
+def test_reason_code_translated_via_map() -> None:
     t = MilestonePayloadTransformer()
-    out = t.transform(_base_row(LATE_ARRIVAL_REASON_CODE="CHS"))
-    assert out.payload["reasonCode"] == "CHS"
+    out = t.transform(_base_row(LATE_ARRIVAL_REASON_CODE="Mechanical Breakdown"))
+    assert out.payload["reasonCode"] == "AI"
+
+
+def test_reason_code_unknown_value_falls_back_to_ns() -> None:
+    t = MilestonePayloadTransformer()
+    out = t.transform(_base_row(LATE_ARRIVAL_REASON_CODE="Some Unknown Reason"))
+    assert out.payload["reasonCode"] == "NS"
 
 
 def test_missing_city_omits_key_from_payload() -> None:
