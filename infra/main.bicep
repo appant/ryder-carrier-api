@@ -52,7 +52,7 @@ param ryderApiBaseUrl string = 'https://api.ryder.com/rcsc/events/v1'
 param ryderCustomerCodes string
 
 @description('Max hours to look back when no watermark exists or after a long outage')
-param watermarkMaxLookbackHours int = 500
+param watermarkMaxLookbackHours int = 1080
 
 @description('Overlap buffer in minutes subtracted from the watermark to avoid missing late-arriving rows')
 param watermarkOverlapMinutes int = 5

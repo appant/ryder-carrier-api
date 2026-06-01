@@ -85,7 +85,7 @@ class AppSettings(BaseSettings):
 
     # --- Watermark safety ---
     watermark_overlap_minutes: int = 5
-    watermark_max_lookback_hours: int = 72
+    watermark_max_lookback_hours: int = 1080
 
     # --- Diagnostic candidate-count query ---
     # Flip to False once the Ship ID remap is proven stable — avoids an extra
