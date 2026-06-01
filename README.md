@@ -112,11 +112,20 @@ pip install -r requirements.txt
 pip install -e .
 ```
 
+> **Python 3.14 on Windows:** `pip install -e .` may fail (cffi/setuptools build issue).
+> Skip it and use `PYTHONPATH=src` instead (see Run a job below).
+
 #### Run a job
 ```bash
-python -m ryder_carrier_api trace          # Run trace puller once
-python -m ryder_carrier_api milestone      # Run milestone puller once
-python -m ryder_carrier_api cleanup        # Run audit cleanup
+# Standard (after pip install -e .):
+python -m ryder_carrier_api trace
+python -m ryder_carrier_api milestone
+python -m ryder_carrier_api cleanup
+
+# Python 3.14 / Windows workaround (no install needed):
+$env:PYTHONPATH="src"; python -m ryder_carrier_api trace
+$env:PYTHONPATH="src"; python -m ryder_carrier_api milestone
+$env:PYTHONPATH="src"; python -m ryder_carrier_api cleanup
 ```
 
 ### Run tests
@@ -135,14 +144,13 @@ pre-commit run --all-files      # run on the whole repo once
 
 ## Authentication
 
-Snowflake authentication uses an abstraction so we can switch methods via the `SNOWFLAKE_AUTH_METHOD` env var without code changes:
+Snowflake uses keypair authentication. Required secrets in Key Vault:
 
-| Value | Status | Required secrets in Key Vault |
-|---|---|---|
-| `password` | **Active** | `snowflake-user`, `snowflake-password` |
-| `keypair` | Built but disabled | `snowflake-user`, `snowflake-private-key`, `snowflake-private-key-passphrase` |
-
-To switch later: change env var, add new secrets to Key Vault, redeploy.
+| Secret name | Description |
+|---|---|
+| `snowflake-user` | Service account username |
+| `snowflake-private-key` | PEM-encoded private key (contents, not path) |
+| `snowflake-private-key-passphrase` | Passphrase for the private key |
 
 ## Deployment
 
