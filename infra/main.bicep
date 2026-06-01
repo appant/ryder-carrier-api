@@ -51,6 +51,24 @@ param ryderApiBaseUrl string = 'https://api.ryder.com/rcsc/events/v1'
 @description('Comma-separated list of Snowflake CUSTOMER_CODE values to include')
 param ryderCustomerCodes string
 
+@description('Max hours to look back when no watermark exists or after a long outage')
+param watermarkMaxLookbackHours int = 500
+
+@description('Overlap buffer in minutes subtracted from the watermark to avoid missing late-arriving rows')
+param watermarkOverlapMinutes int = 5
+
+@description('Audit log retention in days')
+param auditRetentionDays int = 180
+
+@description('Max concurrent Ryder API calls per job run')
+param ryderMaxConcurrency int = 5
+
+@description('Max retry attempts per Ryder API call')
+param ryderMaxRetries int = 5
+
+@description('Ryder API request timeout in seconds')
+param ryderTimeoutSeconds int = 30
+
 @description('Cron schedule for the trace job (every 15 min by default)')
 param traceCronExpression string = '*/15 * * * *'
 
@@ -62,6 +80,15 @@ param cleanupCronExpression string = '0 0 1 * *'
 
 @description('Container image tag to deploy. Bicep uses the placeholder image until deploy_app.sh runs.')
 param imageTag string = 'placeholder'
+
+// -----------------------------------------------------------------------------
+// Tags
+// -----------------------------------------------------------------------------
+var tags = {
+  app: 'ryder'
+  Environment: env
+  'managed-by': 'bicep'
+}
 
 // -----------------------------------------------------------------------------
 // Naming
@@ -91,6 +118,7 @@ module shared 'modules/shared.bicep' = {
     uamiName: uamiName
     lawName: lawName
     appiName: appiName
+    tags: tags
   }
 }
 
@@ -105,6 +133,7 @@ module containerAppsEnv 'modules/container_apps_env.bicep' = {
     lawCustomerId: shared.outputs.lawCustomerId
     lawPrimarySharedKey: shared.outputs.lawPrimarySharedKey
     appInsightsConnectionString: shared.outputs.appInsightsConnectionString
+    tags: tags
   }
 }
 
@@ -119,6 +148,7 @@ module jobs 'modules/jobs.bicep' = {
     jobNamePrefix: jobNamePrefix
     containerAppsEnvId: containerAppsEnv.outputs.id
     uamiId: shared.outputs.uamiId
+    uamiClientId: shared.outputs.uamiClientId
     acrLoginServer: shared.outputs.acrLoginServer
     storageAccountName: storageName
     keyVaultUri: shared.outputs.keyVaultUri
@@ -131,9 +161,16 @@ module jobs 'modules/jobs.bicep' = {
     snowflakeAuthMethod: snowflakeAuthMethod
     ryderApiBaseUrl: ryderApiBaseUrl
     ryderCustomerCodes: ryderCustomerCodes
+    watermarkMaxLookbackHours: watermarkMaxLookbackHours
+    watermarkOverlapMinutes: watermarkOverlapMinutes
+    auditRetentionDays: auditRetentionDays
+    ryderMaxConcurrency: ryderMaxConcurrency
+    ryderMaxRetries: ryderMaxRetries
+    ryderTimeoutSeconds: ryderTimeoutSeconds
     traceCronExpression: traceCronExpression
     milestoneCronExpression: milestoneCronExpression
     cleanupCronExpression: cleanupCronExpression
+    tags: tags
   }
 }
 

@@ -168,9 +168,17 @@ def _entity_to_entry(entity: dict[str, Any]) -> AuditEntry:
 
 
 def _to_utc(value: datetime) -> datetime:
-    if value.tzinfo is None:
-        return value.replace(tzinfo=UTC)
-    return value.astimezone(UTC)
+    aware = value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
+    return datetime(
+        aware.year,
+        aware.month,
+        aware.day,
+        aware.hour,
+        aware.minute,
+        aware.second,
+        aware.microsecond,
+        tzinfo=UTC,
+    )
 
 
 def _to_utc_optional(value: datetime | None) -> datetime | None:

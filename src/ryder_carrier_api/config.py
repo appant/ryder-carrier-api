@@ -18,11 +18,6 @@ class Environment(StrEnum):
     PROD = "prod"
 
 
-class SnowflakeAuthMethod(StrEnum):
-    PASSWORD = "password"
-    KEYPAIR = "keypair"
-
-
 class AppSettings(BaseSettings):
     """Settings sourced from env vars (with `.env` fallback in local dev)."""
 
@@ -47,7 +42,6 @@ class AppSettings(BaseSettings):
     secrets_blob_url: str = ""
 
     # --- Snowflake ---
-    snowflake_auth_method: SnowflakeAuthMethod = SnowflakeAuthMethod.PASSWORD
     snowflake_account: str
     snowflake_warehouse: str = "COMPUTE_WH"
     snowflake_database: str
@@ -56,7 +50,6 @@ class AppSettings(BaseSettings):
     snowflake_query_timeout_seconds: int = 60
 
     secret_name_snowflake_user: str = "snowflake-user"
-    secret_name_snowflake_password: str = "snowflake-password"
     secret_name_snowflake_private_key: str = "snowflake-private-key"
     secret_name_snowflake_private_key_passphrase: str = "snowflake-private-key-passphrase"
 

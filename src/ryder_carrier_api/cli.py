@@ -19,12 +19,10 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-from .clients.auth.base import SnowflakeAuthProvider
 from .clients.auth.keypair_auth import KeyPairAuthProvider
-from .clients.auth.password_auth import UsernamePasswordAuthProvider
 from .clients.ryder_client import RyderClient
 from .clients.snowflake_client import SnowflakeClient
-from .config import AppSettings, SnowflakeAuthMethod, get_settings
+from .config import AppSettings, get_settings
 from .secrets.base import SecretProvider
 from .secrets.blob_json import BlobJsonSecretProvider
 from .secrets.env_provider import EnvSecretProvider
@@ -135,13 +133,8 @@ def _build_secret_provider(settings: AppSettings) -> SecretProvider:
     return EnvSecretProvider()
 
 
-def build_auth_provider(settings: AppSettings, secrets: SecretProvider) -> SnowflakeAuthProvider:
-    """Selects auth implementation from config. Flip method without touching code."""
-    if settings.snowflake_auth_method == SnowflakeAuthMethod.PASSWORD:
-        return UsernamePasswordAuthProvider(settings=settings, secrets=secrets)
-    if settings.snowflake_auth_method == SnowflakeAuthMethod.KEYPAIR:
-        return KeyPairAuthProvider(settings=settings, secrets=secrets)
-    raise ValueError(f"Unknown SNOWFLAKE_AUTH_METHOD: {settings.snowflake_auth_method}")
+def build_auth_provider(settings: AppSettings, secrets: SecretProvider) -> KeyPairAuthProvider:
+    return KeyPairAuthProvider(settings=settings, secrets=secrets)
 
 
 def _build_watermark_store(settings: AppSettings) -> WatermarkStore:

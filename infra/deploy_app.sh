@@ -42,11 +42,12 @@ SUFFIX="cus-${ENV}-int-ryder"
 SUFFIX_NODASH="cus${ENV}intryder"
 
 ACR="cr${SUFFIX_NODASH}"
+ACR_SERVER="${ACR}.azurecr.io"
 KV="kv-${SUFFIX}"
 JOB_PREFIX="job-${SUFFIX}"
 IMAGE_NAME="ryder-carrier-api"
 TAG=$(git rev-parse --short HEAD 2>/dev/null || echo "manual-$(date +%Y%m%d%H%M%S)")
-FULL_IMAGE="${ACR}.azurecr.io/${IMAGE_NAME}:${TAG}"
+FULL_IMAGE="${ACR_SERVER}/${IMAGE_NAME}:${TAG}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 APP_DIR="$(dirname "$SCRIPT_DIR")"
@@ -74,23 +75,30 @@ _get() {
 }
 
 SNOWFLAKE_USER=$(_get "snowflake-user")
-SNOWFLAKE_PASSWORD=$(_get "snowflake-password")
+SNOWFLAKE_PRIVATE_KEY_PATH=$(_get "snowflake-private-key-path")
+SNOWFLAKE_PRIVATE_KEY_PASSPHRASE=$(_get "snowflake-private-key-passphrase")
 RYDER_API_KEY=$(_get "ryder-api-key")
 RYDER_CARRIER_SCAC=$(_get "ryder-carrier-scac")
 
-for VAR in SNOWFLAKE_USER SNOWFLAKE_PASSWORD RYDER_API_KEY RYDER_CARRIER_SCAC; do
+for VAR in SNOWFLAKE_USER SNOWFLAKE_PRIVATE_KEY_PATH SNOWFLAKE_PRIVATE_KEY_PASSPHRASE RYDER_API_KEY RYDER_CARRIER_SCAC; do
   if [[ -z "${!VAR}" ]]; then
     echo "ERROR: $VAR is empty in $CONFIG_FILE — fill it in before deploying."
     exit 1
   fi
 done
 
+if [[ ! -f "$SNOWFLAKE_PRIVATE_KEY_PATH" ]]; then
+  echo "ERROR: Private key file not found: $SNOWFLAKE_PRIVATE_KEY_PATH"
+  exit 1
+fi
+
 echo ""
 echo "=== Step 1: Writing secrets to Key Vault ==="
-az keyvault secret set --vault-name "$KV" --name "snowflake-user"      --value "$SNOWFLAKE_USER"      --output none && echo "  set snowflake-user"
-az keyvault secret set --vault-name "$KV" --name "snowflake-password"  --value "$SNOWFLAKE_PASSWORD"  --output none && echo "  set snowflake-password"
-az keyvault secret set --vault-name "$KV" --name "ryder-api-key"       --value "$RYDER_API_KEY"       --output none && echo "  set ryder-api-key"
-az keyvault secret set --vault-name "$KV" --name "ryder-carrier-scac"  --value "$RYDER_CARRIER_SCAC"  --output none && echo "  set ryder-carrier-scac"
+az keyvault secret set --vault-name "$KV" --name "snowflake-user"                     --value "$SNOWFLAKE_USER"                          --output none && echo "  set snowflake-user"
+az keyvault secret set --vault-name "$KV" --name "snowflake-private-key"              --file   "$SNOWFLAKE_PRIVATE_KEY_PATH"              --output none && echo "  set snowflake-private-key (from $SNOWFLAKE_PRIVATE_KEY_PATH)"
+az keyvault secret set --vault-name "$KV" --name "snowflake-private-key-passphrase"   --value "$SNOWFLAKE_PRIVATE_KEY_PASSPHRASE"         --output none && echo "  set snowflake-private-key-passphrase"
+az keyvault secret set --vault-name "$KV" --name "ryder-api-key"                      --value "$RYDER_API_KEY"                            --output none && echo "  set ryder-api-key"
+az keyvault secret set --vault-name "$KV" --name "ryder-carrier-scac"                 --value "$RYDER_CARRIER_SCAC"                       --output none && echo "  set ryder-carrier-scac"
 
 # -----------------------------------------------------------------------------
 # 2. Build & push image via ACR build (no local Docker required)

@@ -11,6 +11,7 @@ param kvName       string
 param uamiName     string
 param lawName      string
 param appiName     string
+param tags         object = {}
 
 // -----------------------------------------------------------------------------
 // User-Assigned Managed Identity
@@ -18,6 +19,7 @@ param appiName     string
 resource uami 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
   name: uamiName
   location: location
+  tags: tags
 }
 
 // -----------------------------------------------------------------------------
@@ -26,6 +28,7 @@ resource uami 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
 resource acr 'Microsoft.ContainerRegistry/registries@2023-11-01-preview' = {
   name: acrName
   location: location
+  tags: tags
   sku: {
     name: 'Basic'
   }
@@ -34,20 +37,6 @@ resource acr 'Microsoft.ContainerRegistry/registries@2023-11-01-preview' = {
   }
 }
 
-// UAMI → AcrPull
-resource acrPullRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(acr.id, uami.id, 'AcrPull')
-  scope: acr
-  properties: {
-    principalId: uami.properties.principalId
-    principalType: 'ServicePrincipal'
-    // AcrPull built-in role ID
-    roleDefinitionId: subscriptionResourceId(
-      'Microsoft.Authorization/roleDefinitions',
-      '7f951dda-4ed3-4680-a7ca-43fe172d538d'
-    )
-  }
-}
 
 // -----------------------------------------------------------------------------
 // Storage Account + tables
@@ -55,6 +44,7 @@ resource acrPullRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-
 resource storage 'Microsoft.Storage/storageAccounts@2023-05-01' = {
   name: storageName
   location: location
+  tags: tags
   sku: {
     name: 'Standard_LRS'
   }
@@ -84,20 +74,6 @@ resource auditTable 'Microsoft.Storage/storageAccounts/tableServices/tables@2023
   name: 'sentaudit'
 }
 
-// UAMI → Storage Table Data Contributor (read/write on tables)
-resource tableDataContributorRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(storage.id, uami.id, 'StorageTableDataContributor')
-  scope: storage
-  properties: {
-    principalId: uami.properties.principalId
-    principalType: 'ServicePrincipal'
-    // Storage Table Data Contributor built-in role ID
-    roleDefinitionId: subscriptionResourceId(
-      'Microsoft.Authorization/roleDefinitions',
-      '0a9a7e1f-b9d0-4cc4-a60d-0319b160aaa3'
-    )
-  }
-}
 
 // -----------------------------------------------------------------------------
 // Key Vault
@@ -105,6 +81,7 @@ resource tableDataContributorRoleAssignment 'Microsoft.Authorization/roleAssignm
 resource kv 'Microsoft.KeyVault/vaults@2023-07-01' = {
   name: kvName
   location: location
+  tags: tags
   properties: {
     tenantId: subscription().tenantId
     sku: {
@@ -122,20 +99,6 @@ resource kv 'Microsoft.KeyVault/vaults@2023-07-01' = {
   }
 }
 
-// UAMI → Key Vault Secrets User (read-only on secrets)
-resource kvSecretsUserRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(kv.id, uami.id, 'KeyVaultSecretsUser')
-  scope: kv
-  properties: {
-    principalId: uami.properties.principalId
-    principalType: 'ServicePrincipal'
-    // Key Vault Secrets User built-in role ID
-    roleDefinitionId: subscriptionResourceId(
-      'Microsoft.Authorization/roleDefinitions',
-      '4633458b-17de-408a-b874-0445c86b69e6'
-    )
-  }
-}
 
 // -----------------------------------------------------------------------------
 // Log Analytics + Application Insights
@@ -143,6 +106,7 @@ resource kvSecretsUserRoleAssignment 'Microsoft.Authorization/roleAssignments@20
 resource law 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
   name: lawName
   location: location
+  tags: tags
   properties: {
     retentionInDays: 30
     sku: {
@@ -154,6 +118,7 @@ resource law 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
 resource appi 'Microsoft.Insights/components@2020-02-02' = {
   name: appiName
   location: location
+  tags: tags
   kind: 'web'
   properties: {
     Application_Type: 'web'
@@ -168,6 +133,7 @@ resource appi 'Microsoft.Insights/components@2020-02-02' = {
 // Outputs
 // -----------------------------------------------------------------------------
 output uamiId                     string = uami.id
+output uamiClientId               string = uami.properties.clientId
 output uamiPrincipalId            string = uami.properties.principalId
 output acrLoginServer             string = acr.properties.loginServer
 output keyVaultUri                string = kv.properties.vaultUri

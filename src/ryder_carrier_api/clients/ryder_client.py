@@ -72,11 +72,11 @@ class RyderClient:
         self._http = httpx.Client(
             base_url=settings.ryder_api_base_url,
             timeout=settings.ryder_timeout_seconds,
+            follow_redirects=True,
             headers={
                 "Ocp-Apim-Subscription-Key": api_key,
                 "carrierSCAC": scac,
                 "Accept": "application/json",
-                "Content-Type": "application/json",
             },
         )
         self._concurrency_semaphore = threading.Semaphore(settings.ryder_max_concurrency)
@@ -128,11 +128,10 @@ class RyderClient:
                     attempts=attempts_seen,
                 )
 
-            # Retryable: 3xx (endpoint moved — don't auto-follow to avoid leaking
-            # the API key to an unintended origin; surface as transient so an
-            # operator updates RYDER_API_BASE_URL deliberately), 408, 425, 429,
-            # and all 5xx.
-            if 300 <= code < 400 or code in (408, 425, 429) or 500 <= code < 600:
+            # Retryable: 408, 425, 429, and all 5xx.
+            # 3xx redirects are followed automatically by httpx (follow_redirects=True)
+            # so they never surface here.
+            if code in (408, 425, 429) or 500 <= code < 600:
                 raise _TransientHttpError(f"{code} retryable: {body[:200]}")
 
             # 4xx (excluding the retryable ones above): permanent rejection —

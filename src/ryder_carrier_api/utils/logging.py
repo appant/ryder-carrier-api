@@ -1,24 +1,29 @@
-"""Structured JSON logging via structlog.
+"""Structured logging via structlog.
 
-One log line = one event. Designed for App Insights / Log Analytics ingestion.
+Dev  (APP_ENV=dev):  coloured, human-readable console output.
+Prod (APP_ENV=prod): JSON lines for App Insights / Log Analytics ingestion.
 """
 
 from __future__ import annotations
 
 import logging
+import os
 import sys
 
 import structlog
 
 
 def configure_logging(level: str = "INFO") -> None:
-    """Wire up structlog to emit JSON to stdout at the given level."""
     log_level = getattr(logging, level.upper(), logging.INFO)
-    logging.basicConfig(
-        format="%(message)s",
-        stream=sys.stdout,
-        level=log_level,
-    )
+    logging.basicConfig(format="%(message)s", stream=sys.stdout, level=log_level)
+
+    is_dev = os.getenv("APP_ENV", "dev").lower() == "dev"
+
+    if is_dev:
+        renderer = structlog.dev.ConsoleRenderer(colors=True)
+    else:
+        renderer = structlog.processors.JSONRenderer()
+
     structlog.configure(
         processors=[
             structlog.contextvars.merge_contextvars,
@@ -26,7 +31,7 @@ def configure_logging(level: str = "INFO") -> None:
             structlog.processors.TimeStamper(fmt="iso", utc=True),
             structlog.processors.StackInfoRenderer(),
             structlog.processors.format_exc_info,
-            structlog.processors.JSONRenderer(),
+            renderer,
         ],
         wrapper_class=structlog.make_filtering_bound_logger(log_level),
         context_class=dict,

@@ -6,6 +6,7 @@
 
 @description('Region')
 param location string
+param tags     object = {}
 
 @allowed(['dev', 'prod'])
 param env string
@@ -15,6 +16,7 @@ param jobNamePrefix string
 
 param containerAppsEnvId string
 param uamiId             string
+param uamiClientId       string
 param acrLoginServer     string
 param storageAccountName string
 param keyVaultUri        string
@@ -29,6 +31,13 @@ param snowflakeAuthMethod string
 
 param ryderApiBaseUrl    string
 param ryderCustomerCodes string
+
+param watermarkMaxLookbackHours int = 500
+param watermarkOverlapMinutes   int = 5
+param auditRetentionDays        int = 180
+param ryderMaxConcurrency       int = 5
+param ryderMaxRetries           int = 5
+param ryderTimeoutSeconds       int = 30
 
 param traceCronExpression     string
 param milestoneCronExpression string
@@ -50,6 +59,7 @@ var image            = imageTag == 'placeholder' ? placeholderImage : realImage
 // -----------------------------------------------------------------------------
 var commonEnvVars = [
   { name: 'APP_ENV',                 value: env }
+  { name: 'AZURE_CLIENT_ID',        value: uamiClientId }
   { name: 'LOG_LEVEL',               value: 'INFO' }
   { name: 'KEY_VAULT_URI',           value: keyVaultUri }
   { name: 'SECRETS_BLOB_URL',        value: '' }
@@ -61,11 +71,17 @@ var commonEnvVars = [
   { name: 'SNOWFLAKE_WAREHOUSE',     value: snowflakeWarehouse }
   { name: 'SNOWFLAKE_SCHEMA',        value: snowflakeSchema }
   { name: 'SNOWFLAKE_ROLE',          value: snowflakeRole }
-  { name: 'RYDER_API_BASE_URL',      value: ryderApiBaseUrl }
-  { name: 'RYDER_CUSTOMER_CODES',    value: ryderCustomerCodes }
+  { name: 'RYDER_API_BASE_URL',               value: ryderApiBaseUrl }
+  { name: 'RYDER_CUSTOMER_CODES',             value: ryderCustomerCodes }
+  { name: 'RYDER_MAX_CONCURRENCY',            value: string(ryderMaxConcurrency) }
+  { name: 'RYDER_MAX_RETRIES',                value: string(ryderMaxRetries) }
+  { name: 'RYDER_TIMEOUT_SECONDS',            value: string(ryderTimeoutSeconds) }
+  { name: 'WATERMARK_MAX_LOOKBACK_HOURS',     value: string(watermarkMaxLookbackHours) }
+  { name: 'WATERMARK_OVERLAP_MINUTES',        value: string(watermarkOverlapMinutes) }
+  { name: 'AUDIT_RETENTION_DAYS',             value: string(auditRetentionDays) }
 ]
 
-var registriesConfig = imageTag == 'placeholder' ? [] : [
+var registriesConfig = [
   {
     server: acrLoginServer
     identity: uamiId
@@ -78,6 +94,7 @@ var registriesConfig = imageTag == 'placeholder' ? [] : [
 resource traceJob 'Microsoft.App/jobs@2024-03-01' = {
   name: '${jobNamePrefix}-trace'
   location: location
+  tags: tags
   identity: {
     type: 'UserAssigned'
     userAssignedIdentities: {
@@ -117,6 +134,7 @@ resource traceJob 'Microsoft.App/jobs@2024-03-01' = {
 resource milestoneJob 'Microsoft.App/jobs@2024-03-01' = {
   name: '${jobNamePrefix}-milestone'
   location: location
+  tags: tags
   identity: {
     type: 'UserAssigned'
     userAssignedIdentities: {
@@ -156,6 +174,7 @@ resource milestoneJob 'Microsoft.App/jobs@2024-03-01' = {
 resource cleanupJob 'Microsoft.App/jobs@2024-03-01' = {
   name: '${jobNamePrefix}-cleanup'
   location: location
+  tags: tags
   identity: {
     type: 'UserAssigned'
     userAssignedIdentities: {

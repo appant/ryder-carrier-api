@@ -4,6 +4,7 @@
 param location string
 
 param caeName string
+param tags    object = {}
 
 @description('Log Analytics customer ID (workspace ID)')
 param lawCustomerId string
@@ -18,6 +19,7 @@ param appInsightsConnectionString string
 resource cae 'Microsoft.App/managedEnvironments@2024-03-01' = {
   name: caeName
   location: location
+  tags: tags
   properties: {
     appLogsConfiguration: {
       destination: 'log-analytics'
