@@ -1,0 +1,100 @@
+// =============================================================================
+// Ryder Carrier API — Log Analytics KQL Queries
+// Table: ContainerAppConsoleLogs_CL
+// =============================================================================
+
+// -----------------------------------------------------------------------------
+// 1. Job run history — success / failure per job over last 7 days
+// -----------------------------------------------------------------------------
+ContainerAppConsoleLogs_CL
+| where TimeGenerated > ago(7d)
+| where ContainerName_s in ("milestone", "trace", "cleanup")
+| where Log_s has_any ("job_complete", "job_failed")
+| extend job    = ContainerName_s
+| extend status = iff(Log_s has "job_complete", "success", "failed")
+| summarize runs = count(), failures = countif(status == "failed")
+    by job, bin(TimeGenerated, 1h)
+| order by TimeGenerated desc
+
+
+// -----------------------------------------------------------------------------
+// 2. Latest run result per job (rows sent, DLQ, seen)
+// -----------------------------------------------------------------------------
+ContainerAppConsoleLogs_CL
+| where TimeGenerated > ago(24h)
+| where ContainerName_s in ("milestone", "trace")
+| where Log_s has "puller_run_complete"
+| extend job          = ContainerName_s
+| extend rows_seen    = toint(extract(@"rows_seen=(\d+)", 1, Log_s))
+| extend rows_sent    = toint(extract(@"rows_sent=(\d+)", 1, Log_s))
+| extend rows_dlq     = toint(extract(@"rows_dlq=(\d+)", 1, Log_s))
+| extend window_hours = todouble(extract(@"window_hours=([\d.]+)", 1, Log_s))
+| project TimeGenerated, job, rows_seen, rows_sent, rows_dlq, window_hours
+| order by TimeGenerated desc
+
+
+// -----------------------------------------------------------------------------
+// 3. Failed jobs — last 7 days with error detail
+// -----------------------------------------------------------------------------
+ContainerAppConsoleLogs_CL
+| where TimeGenerated > ago(7d)
+| where ContainerName_s in ("milestone", "trace", "cleanup")
+| where Log_s has "job_failed"
+| project TimeGenerated, job = ContainerName_s, Log_s
+| order by TimeGenerated desc
+
+
+// -----------------------------------------------------------------------------
+// 4. DLQ breakdown — rows that failed to send and why
+// -----------------------------------------------------------------------------
+ContainerAppConsoleLogs_CL
+| where TimeGenerated > ago(24h)
+| where ContainerName_s in ("milestone", "trace")
+| where Log_s has "row_failed_permanently"
+| extend job           = ContainerName_s
+| extend response_code = toint(extract(@"response_code=(\d+)", 1, Log_s))
+| extend response_body = extract(@"response_body='([^']*)'", 1, Log_s)
+| summarize dlq_count = count() by job, response_code, response_body
+| order by dlq_count desc
+
+
+// -----------------------------------------------------------------------------
+// 5. Rows sent to Ryder — trend over time
+// -----------------------------------------------------------------------------
+ContainerAppConsoleLogs_CL
+| where TimeGenerated > ago(7d)
+| where ContainerName_s in ("milestone", "trace")
+| where Log_s has "puller_run_complete"
+| extend job       = ContainerName_s
+| extend rows_sent = toint(extract(@"rows_sent=(\d+)", 1, Log_s))
+| summarize total_sent = sum(rows_sent) by job, bin(TimeGenerated, 1h)
+| order by TimeGenerated desc
+
+
+// -----------------------------------------------------------------------------
+// 6. Candidate diagnostic — Ship ID coverage per run
+// -----------------------------------------------------------------------------
+ContainerAppConsoleLogs_CL
+| where TimeGenerated > ago(24h)
+| where ContainerName_s in ("milestone", "trace")
+| where Log_s has "puller_candidates"
+| extend job                     = ContainerName_s
+| extend rows_before_ship_filter = toint(extract(@"rows_before_ship_id_filter=(\d+)", 1, Log_s))
+| extend rows_with_ship_id       = toint(extract(@"rows_with_ship_id=(\d+)", 1, Log_s))
+| extend rows_without_ship_id    = toint(extract(@"rows_without_ship_id=(\d+)", 1, Log_s))
+| project TimeGenerated, job, rows_before_ship_filter, rows_with_ship_id, rows_without_ship_id
+| order by TimeGenerated desc
+
+
+// -----------------------------------------------------------------------------
+// 7. Watermark window — how far back each run is pulling
+// -----------------------------------------------------------------------------
+ContainerAppConsoleLogs_CL
+| where TimeGenerated > ago(7d)
+| where ContainerName_s in ("milestone", "trace")
+| where Log_s has "puller_run_start"
+| extend job          = ContainerName_s
+| extend window_hours = todouble(extract(@"window_hours=([\d.]+)", 1, Log_s))
+| extend cursor_start = extract(@"cursor_start=([\d\-T:+.]+)", 1, Log_s)
+| project TimeGenerated, job, window_hours, cursor_start
+| order by TimeGenerated desc
