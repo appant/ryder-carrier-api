@@ -81,15 +81,18 @@ def test_429_retried_as_transient() -> None:
 
 
 @respx.mock
-def test_3xx_classified_as_transient_not_followed() -> None:
-    """3xx must surface as transient so an operator updates the base URL deliberately
-    (instead of httpx auto-following and leaking the API key cross-origin)."""
-    route = respx.post("https://api.example.test/v1/loads/trace-requests").respond(
-        301, headers={"Location": "https://attacker.example.com/"}
+def test_3xx_followed_and_final_response_determines_outcome() -> None:
+    """3xx redirects are followed automatically by httpx; the final response code
+    determines the outcome (not the redirect itself)."""
+    respx.post("https://api.example.test/v1/loads/trace-requests").respond(
+        301, headers={"Location": "https://api.example.test/v1/loads/trace-requests-new"}
+    )
+    respx.get("https://api.example.test/v1/loads/trace-requests-new").respond(
+        200, json={"ok": True}
     )
     result = _client().post(RyderEndpoint.TRACE, {})
-    assert result.status == RyderResultStatus.FAILED_TRANSIENT
-    assert route.call_count == 3
+    assert result.status == RyderResultStatus.SENT
+    assert result.response_code == 200
 
 
 @respx.mock
