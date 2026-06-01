@@ -22,10 +22,6 @@ repos:
         args: [--fix]
       - id: ruff-format
 
-  # mypy hook omitted — no Python 3.11 on this machine and pydantic-core has no
-  # Python 3.14 wheel yet. Run mypy manually: PYTHONPATH=src mypy src
-  # CI still runs mypy on Python 3.11 (ubuntu-latest).
-
   - repo: local
     hooks:
       - id: pytest
@@ -34,3 +30,10 @@ repos:
         language: system
         pass_filenames: false
         stages: [pre-push]   # run only on push, not every commit (keeps commits fast)
+
+      - id: mypy
+        name: mypy
+        entry: mypy src
+        language: system
+        pass_filenames: false
+        stages: [pre-push]
