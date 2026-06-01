@@ -19,6 +19,7 @@ def configure_logging(level: str = "INFO") -> None:
 
     is_dev = os.getenv("APP_ENV", "dev").lower() == "dev"
 
+    renderer: structlog.types.Processor
     if is_dev:
         renderer = structlog.dev.ConsoleRenderer(colors=True)
     else:
