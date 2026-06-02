@@ -139,4 +139,5 @@ output acrLoginServer             string = acr.properties.loginServer
 output keyVaultUri                string = kv.properties.vaultUri
 output lawCustomerId              string = law.properties.customerId
 output lawPrimarySharedKey        string = law.listKeys().primarySharedKey
+output lawResourceId              string = law.id
 output appInsightsConnectionString string = appi.properties.ConnectionString

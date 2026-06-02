@@ -81,6 +81,9 @@ param cleanupCronExpression string = '0 0 1 * *'
 @description('Container image tag to deploy. Bicep uses the placeholder image until deploy_app.sh runs.')
 param imageTag string = 'placeholder'
 
+@description('Email address to notify on alerts (job failures, DLQ, job not running)')
+param alertEmail string
+
 // -----------------------------------------------------------------------------
 // Tags
 // -----------------------------------------------------------------------------
@@ -144,7 +147,6 @@ module jobs 'modules/jobs.bicep' = {
   name: 'jobs'
   params: {
     location: location
-    env: env
     jobNamePrefix: jobNamePrefix
     containerAppsEnvId: containerAppsEnv.outputs.id
     uamiId: shared.outputs.uamiId
@@ -170,6 +172,19 @@ module jobs 'modules/jobs.bicep' = {
     traceCronExpression: traceCronExpression
     milestoneCronExpression: milestoneCronExpression
     cleanupCronExpression: cleanupCronExpression
+    tags: tags
+  }
+}
+
+// -----------------------------------------------------------------------------
+// Alerts
+// -----------------------------------------------------------------------------
+module alerts 'modules/alerts.bicep' = {
+  name: 'alerts'
+  params: {
+    location: location
+    lawResourceId: shared.outputs.lawResourceId
+    alertEmail: alertEmail
     tags: tags
   }
 }
