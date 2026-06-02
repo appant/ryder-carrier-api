@@ -59,6 +59,21 @@
 // | project TimeGenerated, event, load_number, event_code, reason_code, resp_code, status, rows_seen, rows_sent
 // | order by TimeGenerated asc
 
+// -----------------------------------------------------------------------------
+// STEP 4 (optional) — Raw Snowflake row received + exact payload sent to Ryder
+//           Shows pairs: snowflake_row (what came in) + ryder_payload (what went out)
+//           Replace the run_id value below with the one from Step 1
+// -----------------------------------------------------------------------------
+// ContainerAppConsoleLogs_CL
+// | where ContainerName_s == "milestone"
+// | where Log_s has "PASTE_RUN_ID_HERE"
+// | where Log_s has_any ("snowflake_row", "ryder_payload")
+// | extend event   = extract('"event": "([^"]+)"', 1, Log_s)
+// | extend ship_id = extract('"ship_id=([^"]+)"', 1, Log_s)
+// | extend payload = extract('"payload": (\\{[^}]+\\})', 1, Log_s)
+// | project TimeGenerated, event, ship_id, payload
+// | order by TimeGenerated asc
+
 // =============================================================================
 
 // -----------------------------------------------------------------------------
