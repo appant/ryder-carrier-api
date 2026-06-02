@@ -34,21 +34,16 @@ from .trace_payload import SkipRow
 # Source: api_mappings/milestone_api_mapping.md + RyderCarrierAPI-milestone-reason-codes.pdf
 EVENT_TYPE_TO_CODE: dict[str, str] = {
     "Driver Arrival": "X3",
-    "Driver Departure": "X1",
+    "Driver Departure": "AF",
     "Hook Loaded": "AF",
     "Hook Empty": "AF",
-    "Drop Loaded": "CP",
-    "Drop Empty": "CP",
-    "Drop Unloading Begin": "X6",
-    "In-Gate Loaded": "X3",
-    "In-Gate Empty": "X3",
-    "Out-Gate Loaded": "X1",
-    "Terminal Arrival": "X3",
-    "Terminal Departure": "X1",
-    "Bobtail In": "X3",
-    "Bobtail Out": "X1",
-    "Notification": "A9",
-    # Defaults to "A9" (General Status Update) if not mapped
+    "In-Gate Loaded": "I1",
+    "Out-Gate Loaded": "OA",
+    "Terminal Arrival": "J1",
+    "Terminal Departure": "K1",
+    "Notification": "NT",
+    "Complete": "D1",
+    # Defaults to "IT" (In Transit) if not mapped
 }
 
 # Mapping from MasterMind LATE_ARRIVAL_REASON_CODE → Ryder EDI214 reasonCode.
@@ -141,7 +136,11 @@ class MilestonePayloadTransformer(PayloadTransformer):
             )
 
         load_number = str(ship_id)
-        event_code = EVENT_TYPE_TO_CODE.get(event_type, "A9")
+        route_type = row.get("ROUTE_TYPE") or ""
+        if event_type == "Driver Arrival" and route_type == "Destination Dray":
+            event_code = "X1"
+        else:
+            event_code = EVENT_TYPE_TO_CODE.get(event_type, "IT")
         raw_reason = row.get("LATE_ARRIVAL_REASON_CODE")
         reason_code = (
             REASON_CODE_MAP.get(raw_reason, DEFAULT_REASON_CODE)
