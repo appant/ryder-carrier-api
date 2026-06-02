@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from typing import Any
+from uuid import uuid4
 
 import structlog
 
@@ -91,7 +92,9 @@ class PullerService(ABC):
         run_started = _now_utc()
         cursor_start = self._compute_cursor_start(run_started)
         window_hours = round((run_started - cursor_start).total_seconds() / 3600, 2)
+        run_id = str(uuid4())
         log = logger.bind(
+            run_id=run_id,
             pipeline=self.pipeline_name,
             cursor_start=cursor_start.isoformat(),
             run_started=run_started.isoformat(),
