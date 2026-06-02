@@ -99,7 +99,13 @@ class TracePayloadTransformer(PayloadTransformer):
             resource_id or f"{lat},{lon}",
             source_time.isoformat(),
         )
-        return TransformedPayload(natural_key=key, payload=payload)
+        return TransformedPayload(
+            natural_key=key,
+            payload=payload,
+            load_number=load_number,
+            event_type=resource_type,
+            event_code=resource_id,
+        )
 
 
 def _resolve_resource(row: dict[str, Any]) -> tuple[str | None, str | None]:

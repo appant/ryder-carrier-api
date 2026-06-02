@@ -62,6 +62,9 @@ class AuditEntry:
     response_body: str
     sent_at_utc: datetime | None
     failed_at_utc: datetime | None
+    load_number: str | None = None
+    event_type: str | None = None
+    event_code: str | None = None
 
 
 class AuditStore(ABC):

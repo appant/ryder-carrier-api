@@ -123,6 +123,9 @@ class TableStorageAuditStore(AuditStore):
             "response_body": _truncate(entry.response_body, 32_000),
             "sent_at_utc": entry.sent_at_utc,
             "failed_at_utc": entry.failed_at_utc,
+            "load_number": entry.load_number or "",
+            "event_type": entry.event_type or "",
+            "event_code": entry.event_code or "",
         }
         self._client.upsert_entity(entity=entity, mode=UpdateMode.REPLACE)
 
@@ -164,6 +167,9 @@ def _entity_to_entry(entity: dict[str, Any]) -> AuditEntry:
         response_body=entity.get("response_body", ""),
         sent_at_utc=_to_utc_optional(entity.get("sent_at_utc")),
         failed_at_utc=_to_utc_optional(entity.get("failed_at_utc")),
+        load_number=entity.get("load_number") or None,
+        event_type=entity.get("event_type") or None,
+        event_code=entity.get("event_code") or None,
     )
 
 

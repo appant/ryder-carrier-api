@@ -18,6 +18,9 @@ from typing import Any
 class TransformedPayload:
     natural_key: str
     payload: dict[str, Any]
+    load_number: str | None = None
+    event_type: str | None = None
+    event_code: str | None = None
 
 
 class PayloadTransformer(ABC):

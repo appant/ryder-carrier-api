@@ -311,6 +311,9 @@ class PullerService(ABC):
                     response_body=result.response_body[:8000],
                     sent_at_utc=_now_utc(),
                     failed_at_utc=None,
+                    load_number=transformed.load_number,
+                    event_type=transformed.event_type,
+                    event_code=transformed.event_code,
                 )
             )
             return "sent"
@@ -331,6 +334,9 @@ class PullerService(ABC):
                     response_body=result.response_body[:8000],
                     sent_at_utc=None,
                     failed_at_utc=_now_utc(),
+                    load_number=transformed.load_number,
+                    event_type=transformed.event_type,
+                    event_code=transformed.event_code,
                 )
             )
             return f"dlq:{result.response_code}"

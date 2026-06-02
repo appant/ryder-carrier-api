@@ -180,4 +180,10 @@ class MilestonePayloadTransformer(PayloadTransformer):
             event_type,
             actual_time.isoformat(),
         )
-        return TransformedPayload(natural_key=key, payload=payload)
+        return TransformedPayload(
+            natural_key=key,
+            payload=payload,
+            load_number=load_number,
+            event_type=event_type,
+            event_code=event_code,
+        )
