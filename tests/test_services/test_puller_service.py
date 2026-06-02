@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from ryder_carrier_api.clients.ryder_client import (
@@ -13,6 +13,7 @@ from ryder_carrier_api.clients.ryder_client import (
 )
 from ryder_carrier_api.config import AppSettings
 from ryder_carrier_api.services.base import PullerService, RunStatus
+from ryder_carrier_api.storage.base import WatermarkRecord
 from ryder_carrier_api.storage.in_memory import (
     InMemoryAuditStore,
     InMemoryWatermarkStore,
@@ -68,7 +69,7 @@ def _settings() -> AppSettings:
     return AppSettings(
         snowflake_account="x",
         snowflake_database="x",
-        watermark_max_lookback_hours=72,
+        watermark_max_lookback_minutes=4320,
         watermark_overlap_minutes=5,
     )  # type: ignore[call-arg]
 
@@ -293,3 +294,41 @@ def test_skiprow_counted_as_invalid_does_not_block_watermark() -> None:
     assert result.rows_skipped_invalid == 1
     assert result.rows_sent == 1
     assert watermarks.get("trace") is not None
+
+
+def _puller_with_watermarks(watermarks: InMemoryWatermarkStore) -> _TestPuller:
+    return _TestPuller(
+        settings=_settings(),  # lookback=4320 min, overlap=5 min
+        snowflake=_FakeSnowflake([]),
+        ryder=_FakeRyder([]),
+        watermarks=watermarks,
+        audit=InMemoryAuditStore(),
+        transformer=_IdentityTransformer(),
+        sql="",
+    )
+
+
+def test_cold_start_looks_back_exactly_the_lookback_window() -> None:
+    """First run (no watermark) looks back exactly watermark_max_lookback_minutes."""
+    puller = _puller_with_watermarks(InMemoryWatermarkStore())
+    run_started = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
+    assert puller._compute_cursor_start(run_started) == run_started - timedelta(minutes=4320)
+
+
+def test_steady_state_resumes_from_watermark_minus_overlap_not_lookback() -> None:
+    """With a watermark, resume from (watermark - overlap) regardless of how
+    small the cold-start lookback is — no per-run floor clamp, so no data is
+    dropped between runs even when lookback is 1 minute."""
+    watermarks = InMemoryWatermarkStore()
+    watermarks.set(
+        WatermarkRecord(
+            pipeline="trace",
+            last_synced_at_utc=datetime(2026, 1, 1, 11, 30, tzinfo=UTC),
+            last_run_status="success",
+            last_run_at_utc=datetime(2026, 1, 1, 11, 30, tzinfo=UTC),
+        )
+    )
+    puller = _puller_with_watermarks(watermarks)
+    run_started = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
+    # 11:30 watermark - 5 min overlap = 11:25, NOT clamped to run_started - lookback.
+    assert puller._compute_cursor_start(run_started) == datetime(2026, 1, 1, 11, 25, tzinfo=UTC)

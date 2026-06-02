@@ -8,8 +8,6 @@
 param location string
 param tags     object = {}
 
-@allowed(['dev', 'prod'])
-param env string
 
 @description('Prefix for the 3 job names (e.g. job-cus-dev-int-ryder)')
 param jobNamePrefix string
@@ -32,7 +30,7 @@ param snowflakeAuthMethod string
 param ryderApiBaseUrl    string
 param ryderCustomerCodes string
 
-param watermarkMaxLookbackHours int = 500
+param watermarkMaxLookbackMinutes int = 1
 param watermarkOverlapMinutes   int = 5
 param auditRetentionDays        int = 180
 param ryderMaxConcurrency       int = 5
@@ -58,7 +56,7 @@ var image            = imageTag == 'placeholder' ? placeholderImage : realImage
 // vars and let the app's SecretProvider talk to KV directly).
 // -----------------------------------------------------------------------------
 var commonEnvVars = [
-  { name: 'APP_ENV',                 value: env }
+  { name: 'APP_ENV',                 value: 'prod' }
   { name: 'AZURE_CLIENT_ID',        value: uamiClientId }
   { name: 'LOG_LEVEL',               value: 'INFO' }
   { name: 'KEY_VAULT_URI',           value: keyVaultUri }
@@ -76,7 +74,7 @@ var commonEnvVars = [
   { name: 'RYDER_MAX_CONCURRENCY',            value: string(ryderMaxConcurrency) }
   { name: 'RYDER_MAX_RETRIES',                value: string(ryderMaxRetries) }
   { name: 'RYDER_TIMEOUT_SECONDS',            value: string(ryderTimeoutSeconds) }
-  { name: 'WATERMARK_MAX_LOOKBACK_HOURS',     value: string(watermarkMaxLookbackHours) }
+  { name: 'WATERMARK_MAX_LOOKBACK_MINUTES',   value: string(watermarkMaxLookbackMinutes) }
   { name: 'WATERMARK_OVERLAP_MINUTES',        value: string(watermarkOverlapMinutes) }
   { name: 'AUDIT_RETENTION_DAYS',             value: string(auditRetentionDays) }
 ]

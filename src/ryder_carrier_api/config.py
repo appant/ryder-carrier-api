@@ -84,8 +84,15 @@ class AppSettings(BaseSettings):
     audit_retention_days: int = 180
 
     # --- Watermark safety ---
+    # Overlap: buffer subtracted from the watermark each steady-state run so
+    # late-arriving rows aren't missed.
     watermark_overlap_minutes: int = 5
-    watermark_max_lookback_hours: int = 1080
+    # Cold-start window: how far back the FIRST run looks when no watermark
+    # exists yet. Applied on cold start ONLY — steady-state runs resume from
+    # the watermark. Defaults to 1 min so a misconfigured environment won't
+    # backfill old data; each environment overrides explicitly (dev=64800,
+    # prod=1).
+    watermark_max_lookback_minutes: int = 1
 
     # --- Diagnostic candidate-count query ---
     # Flip to False once the Ship ID remap is proven stable — avoids an extra

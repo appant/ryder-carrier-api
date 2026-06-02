@@ -9,3 +9,5 @@ param snowflakeRole      = 'RYDER_INTEGRATION_ROLE_DEV'
 param snowflakeAuthMethod = 'keypair'
 param ryderApiBaseUrl    = 'https://api.ryder.com/rcsc/events/v1'
 param ryderCustomerCodes = 'AMEBOTFRTX,DRPEPPFRTX,KEURIGFRTX,KEUDRPFRTX,MOTTSFRTX,ELECTRONOMI'
+param watermarkMaxLookbackMinutes = 64800  // 45 days — cold-start window for the first dev run
+param alertEmail         = 'apant@usmmg.com'

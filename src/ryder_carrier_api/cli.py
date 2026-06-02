@@ -3,6 +3,11 @@
 Usage:
     python -m ryder_carrier_api trace
     python -m ryder_carrier_api milestone
+
+Local dev — Python 3.14 / Windows (no pip install -e . needed):
+    $env:PYTHONPATH="src"; python -m ryder_carrier_api trace
+    $env:PYTHONPATH="src"; python -m ryder_carrier_api milestone
+    $env:PYTHONPATH="src"; python -m ryder_carrier_api cleanup
     python -m ryder_carrier_api cleanup
 
 This is the *only* place that knows how to wire everything together.

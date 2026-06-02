@@ -51,8 +51,8 @@ param ryderApiBaseUrl string = 'https://api.ryder.com/rcsc/events/v1'
 @description('Comma-separated list of Snowflake CUSTOMER_CODE values to include')
 param ryderCustomerCodes string
 
-@description('Max hours to look back when no watermark exists or after a long outage')
-param watermarkMaxLookbackHours int = 1080
+@description('Cold-start window in minutes: how far back the FIRST run looks when no watermark exists. Applied on cold start only; steady-state runs resume from the watermark. Defaults to 1 (safe: no backfill); each env overrides explicitly (dev=64800, prod=1).')
+param watermarkMaxLookbackMinutes int = 1
 
 @description('Overlap buffer in minutes subtracted from the watermark to avoid missing late-arriving rows')
 param watermarkOverlapMinutes int = 5
@@ -163,7 +163,7 @@ module jobs 'modules/jobs.bicep' = {
     snowflakeAuthMethod: snowflakeAuthMethod
     ryderApiBaseUrl: ryderApiBaseUrl
     ryderCustomerCodes: ryderCustomerCodes
-    watermarkMaxLookbackHours: watermarkMaxLookbackHours
+    watermarkMaxLookbackMinutes: watermarkMaxLookbackMinutes
     watermarkOverlapMinutes: watermarkOverlapMinutes
     auditRetentionDays: auditRetentionDays
     ryderMaxConcurrency: ryderMaxConcurrency

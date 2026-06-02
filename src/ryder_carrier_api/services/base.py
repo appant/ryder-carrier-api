@@ -2,7 +2,8 @@
 
 Each concrete puller orchestrates one cadence:
     1. Read watermark
-    2. Read rows from Snowflake using cursor + overlap + max-lookback
+    2. Read rows from Snowflake using watermark cursor + overlap
+       (cold-start lookback only on the first run)
     3. For each row: check audit dedup → transform → POST → write audit
     4. If all rows accounted for (sent or DLQ'd): advance watermark
     5. Otherwise: leave watermark for replay
@@ -211,19 +212,25 @@ class PullerService(ABC):
     def _compute_cursor_start(self, run_started: datetime) -> datetime:
         """Compute the lower-bound timestamp for the pull window.
 
-        Uses last successful watermark minus overlap; clamped to max lookback
-        so a long outage doesn't trigger an unbounded scan.
+        Cold start (no watermark yet): look back exactly
+        ``watermark_max_lookback_minutes`` from now. Prod sets this to 1 so the
+        very first run doesn't backfill historical data.
+
+        Steady state (watermark exists): resume from the last successful
+        watermark minus the overlap buffer, so no rows are missed between runs.
+        The cold-start lookback is deliberately NOT applied as a per-run floor
+        here — after an outage we replay everything since the last watermark
+        (audit dedup guards against duplicates) rather than silently dropping
+        the gap.
         """
         wm = self._watermarks.get(self.pipeline_name)
-        overlap = timedelta(minutes=self._settings.watermark_overlap_minutes)
-        max_lookback = timedelta(hours=self._settings.watermark_max_lookback_hours)
 
         if wm is None:
-            return run_started - max_lookback
+            cold_start = timedelta(minutes=self._settings.watermark_max_lookback_minutes)
+            return run_started - cold_start
 
-        unclamped = wm.last_synced_at_utc - overlap
-        floor = run_started - max_lookback
-        return max(unclamped, floor)
+        overlap = timedelta(minutes=self._settings.watermark_overlap_minutes)
+        return wm.last_synced_at_utc - overlap
 
     def _log_candidate_counts(
         self, params: dict[str, Any], *, log: structlog.stdlib.BoundLogger
