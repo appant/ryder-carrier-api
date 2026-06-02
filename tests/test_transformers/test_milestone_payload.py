@@ -29,29 +29,40 @@ def test_driver_arrival_maps_to_x3() -> None:
     assert out.payload["eventCode"] == "X3"
 
 
-def test_driver_departure_maps_to_x1() -> None:
+def test_driver_departure_maps_to_af() -> None:
     t = MilestonePayloadTransformer()
     out = t.transform(_base_row(EVENT_TYPE="Driver Departure"))
+    assert out.payload["eventCode"] == "AF"
+
+
+def test_driver_arrival_destination_dray_maps_to_x1() -> None:
+    t = MilestonePayloadTransformer()
+    out = t.transform(_base_row(ROUTE_TYPE="Destination Dray"))
     assert out.payload["eventCode"] == "X1"
 
 
-def test_notification_maps_to_a9() -> None:
+def test_driver_arrival_origin_dray_maps_to_x3() -> None:
+    t = MilestonePayloadTransformer()
+    out = t.transform(_base_row(ROUTE_TYPE="Origin Dray"))
+    assert out.payload["eventCode"] == "X3"
+
+
+def test_notification_maps_to_nt() -> None:
     t = MilestonePayloadTransformer()
     out = t.transform(_base_row(EVENT_TYPE="Notification"))
-    assert out.payload["eventCode"] == "A9"
+    assert out.payload["eventCode"] == "NT"
 
 
-def test_unmapped_event_type_defaults_to_a9() -> None:
-    """A9 = General Status Update — safe fallback."""
+def test_unmapped_event_type_defaults_to_it() -> None:
     t = MilestonePayloadTransformer()
     out = t.transform(_base_row(EVENT_TYPE="Some New Event Type"))
-    assert out.payload["eventCode"] == "A9"
+    assert out.payload["eventCode"] == "IT"
 
 
-def test_null_event_type_defaults_to_a9() -> None:
+def test_null_event_type_defaults_to_it() -> None:
     t = MilestonePayloadTransformer()
     out = t.transform(_base_row(EVENT_TYPE=None))
-    assert out.payload["eventCode"] == "A9"
+    assert out.payload["eventCode"] == "IT"
 
 
 def test_default_reason_code_when_null() -> None:
