@@ -3,6 +3,64 @@
 // Table: ContainerAppConsoleLogs_CL
 // =============================================================================
 
+// =============================================================================
+// MILESTONE DIAGNOSTIC PLAYBOOK
+// Use these 3 queries in sequence to diagnose a milestone run.
+// =============================================================================
+
+// -----------------------------------------------------------------------------
+// STEP 1 — Find the run_id for the run you want to investigate
+//           Copy the run_id from the most recent row and use in Steps 2 & 3
+// -----------------------------------------------------------------------------
+// ContainerAppConsoleLogs_CL
+// | where ContainerName_s == "milestone"
+// | where Log_s has "puller_run_start"
+// | extend run_id = extract('"run_id": "([^"]+)"', 1, Log_s)
+// | project TimeGenerated, run_id
+// | order by TimeGenerated desc
+// | take 5
+
+// -----------------------------------------------------------------------------
+// STEP 2 — Job start + end summary for that run
+//           Shows: window pulled, how many rows seen, sent, deduped, invalid, DLQ
+//           Replace the run_id value below with the one from Step 1
+// -----------------------------------------------------------------------------
+// ContainerAppConsoleLogs_CL
+// | where ContainerName_s == "milestone"
+// | where Log_s has "PASTE_RUN_ID_HERE"
+// | where Log_s has_any ("puller_run_start", "puller_run_complete")
+// | extend event        = extract('"event": "([^"]+)"', 1, Log_s)
+// | extend cursor_start = extract('"cursor_start": "([^"]+)"', 1, Log_s)
+// | extend window_hours = extract('"window_hours": ([\\d.]+)', 1, Log_s)
+// | extend rows_seen    = extract('"rows_seen": (\\d+)', 1, Log_s)
+// | extend rows_sent    = extract('"rows_sent": (\\d+)', 1, Log_s)
+// | extend rows_dedup   = extract('"rows_skipped_dedup": (\\d+)', 1, Log_s)
+// | extend rows_invalid = extract('"rows_skipped_invalid": (\\d+)', 1, Log_s)
+// | extend rows_dlq     = extract('"rows_dlq": (\\d+)', 1, Log_s)
+// | project TimeGenerated, event, cursor_start, window_hours, rows_seen, rows_sent, rows_dedup, rows_invalid, rows_dlq
+// | order by TimeGenerated asc
+
+// -----------------------------------------------------------------------------
+// STEP 3 — Every event in that run
+//           Shows: each row pulled, what was sent to Ryder, response code + status
+//           Replace the run_id value below with the one from Step 1
+// -----------------------------------------------------------------------------
+// ContainerAppConsoleLogs_CL
+// | where ContainerName_s == "milestone"
+// | where Log_s has "PASTE_RUN_ID_HERE"
+// | extend event        = extract('"event": "([^"]+)"', 1, Log_s)
+// | extend load_number  = extract('"loadNumber": "([^"]+)"', 1, Log_s)
+// | extend event_code   = extract('"eventCode": "([^"]+)"', 1, Log_s)
+// | extend reason_code  = extract('"reasonCode": "([^"]+)"', 1, Log_s)
+// | extend resp_code    = extract('"response_code": (\\d+)', 1, Log_s)
+// | extend status       = extract('"status": "([^"]+)"', 1, Log_s)
+// | extend rows_seen    = extract('"rows_seen": (\\d+)', 1, Log_s)
+// | extend rows_sent    = extract('"rows_sent": (\\d+)', 1, Log_s)
+// | project TimeGenerated, event, load_number, event_code, reason_code, resp_code, status, rows_seen, rows_sent
+// | order by TimeGenerated asc
+
+// =============================================================================
+
 // -----------------------------------------------------------------------------
 // 1. Job run history — success / failure per job over last 7 days
 // -----------------------------------------------------------------------------
