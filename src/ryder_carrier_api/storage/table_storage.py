@@ -12,7 +12,12 @@ from azure.core.exceptions import (
     ServiceRequestError,
     ServiceResponseError,
 )
-from azure.data.tables import TableClient, TableServiceClient, UpdateMode
+from azure.data.tables import (
+    TableClient,
+    TableServiceClient,
+    TableTransactionError,
+    UpdateMode,
+)
 from azure.identity import DefaultAzureCredential
 
 from .base import (
@@ -183,10 +188,12 @@ class TableStorageAuditStore(AuditStore):
     def delete_older_than(self, pipeline: str, cutoff_utc: datetime) -> int:
         """Delete audit rows whose terminal timestamp is older than the cutoff.
 
-        Table Storage does not support batch deletes across partitions, but
-        within a partition we can issue batched delete operations. For our
-        volume (a few thousand deletes per month) plain per-row delete is
-        fine and simpler.
+        Two things keep the monthly purge cheap as the table grows:
+          - the query projects only the keys (``select``) so we don't drag back
+            up-to-32 KB response bodies just to delete by key, and
+          - deletes go out in transactional batches of up to 100 (all share the
+            pipeline PartitionKey) — ~100x fewer round-trips than per-row deletes,
+            which is what kept the purge under its timeout at scale.
         """
         cutoff_iso = cutoff_utc.isoformat()
         query = (
@@ -195,13 +202,38 @@ class TableStorageAuditStore(AuditStore):
             f"(failed_at_utc lt datetime'{cutoff_iso}'))"
         )
         deleted = 0
-        for entity in self._client.query_entities(query_filter=query):
-            self._client.delete_entity(
-                partition_key=entity["PartitionKey"],
-                row_key=entity["RowKey"],
+        batch: list[tuple[str, dict[str, str]]] = []
+        for entity in self._client.query_entities(
+            query_filter=query, select=["PartitionKey", "RowKey"]
+        ):
+            batch.append(
+                ("delete", {"PartitionKey": entity["PartitionKey"], "RowKey": entity["RowKey"]})
             )
-            deleted += 1
+            if len(batch) >= 100:
+                deleted += self._submit_delete_batch(batch)
+                batch = []
+        if batch:
+            deleted += self._submit_delete_batch(batch)
         return deleted
+
+    def _submit_delete_batch(self, batch: list[tuple[str, dict[str, str]]]) -> int:
+        """Submit a transactional delete batch (<=100 same-partition ops). If the
+        atomic batch is rejected, fall back to best-effort per-row deletes so one
+        problematic row can't abort the whole monthly purge."""
+        try:
+            self._client.submit_transaction(batch)
+            return len(batch)
+        except TableTransactionError:
+            deleted = 0
+            for _action, key in batch:
+                try:
+                    self._client.delete_entity(
+                        partition_key=key["PartitionKey"], row_key=key["RowKey"]
+                    )
+                    deleted += 1
+                except ResourceNotFoundError:
+                    continue
+            return deleted
 
 
 # =============================================================================
