@@ -13,9 +13,10 @@ from ryder_carrier_api.clients.ryder_client import (
 )
 from ryder_carrier_api.config import AppSettings
 from ryder_carrier_api.services.base import PullerService, RunStatus
-from ryder_carrier_api.storage.base import WatermarkRecord
+from ryder_carrier_api.storage.base import AuditEntry, AuditStatus, WatermarkRecord
 from ryder_carrier_api.storage.in_memory import (
     InMemoryAuditStore,
+    InMemoryDeadLetterStore,
     InMemoryWatermarkStore,
 )
 from ryder_carrier_api.transformers.base import PayloadTransformer, TransformedPayload
@@ -48,6 +49,8 @@ class _IdentityTransformer(PayloadTransformer):
     def transform(self, row: dict) -> TransformedPayload:
         if row.get("skip"):
             raise SkipRow("test skip")
+        if row.get("boom"):
+            raise ValueError("test transform error")
         return TransformedPayload(
             natural_key=row["key"],
             payload={"loadNumber": row["key"]},
@@ -186,9 +189,10 @@ def test_transient_failure_does_not_advance_watermark() -> None:
     assert watermarks.get("trace") is None  # NOT advanced
 
 
-def test_transient_failure_does_not_write_audit_row() -> None:
-    """Critical: transient must NOT write an audit row, or replay would dedup-skip
-    the row and lose data permanently."""
+def test_transient_failure_writes_retrying_not_terminal() -> None:
+    """A transient failure records a RETRYING row (to count attempts), but
+    RETRYING is non-terminal — replay still reprocesses it, so no data is lost.
+    The old 'no audit row' invariant is replaced by 'not terminal'."""
     audit = InMemoryAuditStore()
     puller = _TestPuller(
         settings=_settings(),
@@ -200,15 +204,16 @@ def test_transient_failure_does_not_write_audit_row() -> None:
         sql="",
     )
     puller.run()
-    assert audit.get("trace", "kT") is None
+    entry = audit.get("trace", "kT")
+    assert entry is not None
+    assert entry.status == AuditStatus.RETRYING
+    assert entry.transient_attempts == 1
 
 
 def test_dedup_skips_rows_already_sent() -> None:
     """A row whose natural_key is already audit=sent should be skipped."""
     audit = InMemoryAuditStore()
     # Pre-seed audit with k1 already sent.
-    from ryder_carrier_api.storage.base import AuditEntry, AuditStatus
-
     audit.upsert(
         AuditEntry(
             pipeline="trace",
@@ -279,6 +284,31 @@ def test_replay_after_transient_does_not_double_send() -> None:
     assert watermarks.get("trace") is not None  # now advanced
 
 
+def test_throttled_rows_are_counted() -> None:
+    """A row that was rate-limited (then sent) is flagged in rows_throttled."""
+    watermarks = InMemoryWatermarkStore()
+    throttled_then_sent = RyderResult(
+        status=RyderResultStatus.SENT,
+        response_code=200,
+        response_body="ok",
+        attempts=2,
+        throttled=True,
+    )
+    puller = _TestPuller(
+        settings=_settings(),
+        snowflake=_FakeSnowflake([{"key": "k1"}, {"key": "k2"}]),
+        ryder=_FakeRyder([throttled_then_sent, _sent()]),
+        watermarks=watermarks,
+        audit=InMemoryAuditStore(),
+        transformer=_IdentityTransformer(),
+        sql="",
+    )
+    result = puller.run()
+    assert result.rows_sent == 2
+    assert result.rows_throttled == 1
+    assert watermarks.get("trace") is not None
+
+
 def test_skiprow_counted_as_invalid_does_not_block_watermark() -> None:
     watermarks = InMemoryWatermarkStore()
     puller = _TestPuller(
@@ -332,3 +362,199 @@ def test_steady_state_resumes_from_watermark_minus_overlap_not_lookback() -> Non
     run_started = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
     # 11:30 watermark - 5 min overlap = 11:25, NOT clamped to run_started - lookback.
     assert puller._compute_cursor_start(run_started) == datetime(2026, 1, 1, 11, 25, tzinfo=UTC)
+
+
+def _settings_with_catchup(cap_minutes: int) -> AppSettings:
+    return AppSettings(
+        snowflake_account="x",
+        snowflake_database="x",
+        watermark_overlap_minutes=5,
+        watermark_max_catchup_minutes=cap_minutes,
+    )  # type: ignore[call-arg]
+
+
+def _puller_with(settings: AppSettings, watermarks: InMemoryWatermarkStore) -> _TestPuller:
+    return _TestPuller(
+        settings=settings,
+        snowflake=_FakeSnowflake([]),
+        ryder=_FakeRyder([]),
+        watermarks=watermarks,
+        audit=InMemoryAuditStore(),
+        transformer=_IdentityTransformer(),
+        sql="",
+    )
+
+
+def test_catchup_capped_when_watermark_older_than_max() -> None:
+    """After a long outage, the cursor is clamped to the catch-up cap rather than
+    replaying an ever-growing window."""
+    watermarks = InMemoryWatermarkStore()
+    watermarks.set(
+        WatermarkRecord(
+            pipeline="trace",
+            last_synced_at_utc=datetime(2026, 1, 1, 0, 0, tzinfo=UTC),  # ~36h before the run
+            last_run_status="success",
+            last_run_at_utc=datetime(2026, 1, 1, 0, 0, tzinfo=UTC),
+        )
+    )
+    puller = _puller_with(_settings_with_catchup(60), watermarks)  # 1-hour cap
+    run_started = datetime(2026, 1, 2, 12, 0, tzinfo=UTC)
+    # watermark - overlap would be 2025-12-31 23:55, but the 60-min cap clamps the
+    # cursor forward to run_started - 60min = 11:00.
+    assert puller._compute_cursor_start(run_started) == datetime(2026, 1, 2, 11, 0, tzinfo=UTC)
+
+
+def test_catchup_not_capped_within_window() -> None:
+    """A watermark within the catch-up window resumes normally (overlap only)."""
+    watermarks = InMemoryWatermarkStore()
+    watermarks.set(
+        WatermarkRecord(
+            pipeline="trace",
+            last_synced_at_utc=datetime(2026, 1, 2, 11, 30, tzinfo=UTC),
+            last_run_status="success",
+            last_run_at_utc=datetime(2026, 1, 2, 11, 30, tzinfo=UTC),
+        )
+    )
+    puller = _puller_with(_settings_with_catchup(60), watermarks)
+    run_started = datetime(2026, 1, 2, 12, 0, tzinfo=UTC)
+    # 11:30 - 5min overlap = 11:25, within the 60-min cap (floor 11:00) → unchanged.
+    assert puller._compute_cursor_start(run_started) == datetime(2026, 1, 2, 11, 25, tzinfo=UTC)
+
+
+# --- Dead-letter isolation (option B) ---
+
+
+def _settings_max_attempts(n: int) -> AppSettings:
+    return AppSettings(
+        snowflake_account="x",
+        snowflake_database="x",
+        watermark_max_lookback_minutes=4320,
+        watermark_overlap_minutes=5,
+        ryder_max_transient_attempts=n,
+    )  # type: ignore[call-arg]
+
+
+def test_4xx_rejection_dead_letters_payload_and_advances() -> None:
+    """A single Ryder rejection is isolated: payload captured to the dead-letter
+    store, watermark advances (doesn't stall the other rows)."""
+    watermarks = InMemoryWatermarkStore()
+    dlq = InMemoryDeadLetterStore()
+    puller = _TestPuller(
+        settings=_settings(),
+        snowflake=_FakeSnowflake([{"key": "kR"}]),
+        ryder=_FakeRyder([_permanent()]),
+        watermarks=watermarks,
+        audit=InMemoryAuditStore(),
+        transformer=_IdentityTransformer(),
+        sql="",
+        dead_letter=dlq,
+    )
+    result = puller.run()
+    assert result.status == RunStatus.SUCCESS
+    assert result.rows_dlq == 1
+    assert watermarks.get("trace") is not None  # advanced past the bad row
+    record = dlq.records[("trace", "kR")]
+    assert record.reason == "ryder_rejected"
+    assert record.response_code == 400
+    assert record.payload == {"loadNumber": "kR"}
+
+
+def test_transform_error_dead_letters_raw_row_and_advances() -> None:
+    """A non-SkipRow transform error captures the raw row and advances."""
+    watermarks = InMemoryWatermarkStore()
+    dlq = InMemoryDeadLetterStore()
+    puller = _TestPuller(
+        settings=_settings(),
+        snowflake=_FakeSnowflake([{"key": "kB", "boom": True}]),
+        ryder=_FakeRyder([]),  # never reached — transform throws first
+        watermarks=watermarks,
+        audit=InMemoryAuditStore(),
+        transformer=_IdentityTransformer(),
+        sql="",
+        dead_letter=dlq,
+    )
+    result = puller.run()
+    assert result.status == RunStatus.SUCCESS
+    assert result.rows_dlq == 1
+    assert watermarks.get("trace") is not None
+    assert len(dlq.records) == 1
+    record = next(iter(dlq.records.values()))
+    assert record.reason == "row_error"
+    assert record.raw_row == {"key": "kB", "boom": True}
+
+
+def test_transient_exhausted_dead_letters_and_advances() -> None:
+    """A row that keeps failing transiently is dead-lettered after
+    ryder_max_transient_attempts, so it can't stall the shared watermark forever.
+    Tick A records RETRYING (frozen); tick B exhausts the budget and advances."""
+    watermarks = InMemoryWatermarkStore()
+    audit = InMemoryAuditStore()
+    dlq = InMemoryDeadLetterStore()
+    settings = _settings_max_attempts(2)
+
+    # Tick A — attempt 1 of 2: still retrying, watermark stalls.
+    result_a = _TestPuller(
+        settings=settings,
+        snowflake=_FakeSnowflake([{"key": "kP"}]),
+        ryder=_FakeRyder([_transient()]),
+        watermarks=watermarks,
+        audit=audit,
+        transformer=_IdentityTransformer(),
+        sql="",
+        dead_letter=dlq,
+    ).run()
+    assert result_a.status == RunStatus.FAILED_TRANSIENT
+    assert watermarks.get("trace") is None
+    assert audit.get("trace", "kP").status == AuditStatus.RETRYING
+    assert ("trace", "kP") not in dlq.records  # not given up on yet
+
+    # Tick B — attempt 2 of 2: exhausted → dead-letter + advance.
+    result_b = _TestPuller(
+        settings=settings,
+        snowflake=_FakeSnowflake([{"key": "kP"}]),
+        ryder=_FakeRyder([_transient()]),
+        watermarks=watermarks,
+        audit=audit,
+        transformer=_IdentityTransformer(),
+        sql="",
+        dead_letter=dlq,
+    ).run()
+    assert result_b.status == RunStatus.SUCCESS
+    assert result_b.rows_dlq == 1
+    assert watermarks.get("trace") is not None  # no longer stalled
+    assert audit.get("trace", "kP").status == AuditStatus.FAILED_PERMANENTLY
+    record = dlq.records[("trace", "kP")]
+    assert record.reason == "transient_exhausted"
+    assert record.payload == {"loadNumber": "kP"}
+
+
+def test_retrying_row_is_retried_not_dedup_skipped() -> None:
+    """A pre-existing RETRYING row must be reprocessed (not dedup-skipped like a
+    terminal row), and on success becomes SENT."""
+    audit = InMemoryAuditStore()
+    audit.upsert(
+        AuditEntry(
+            pipeline="trace",
+            natural_key="kRetry",
+            status=AuditStatus.RETRYING,
+            response_code=503,
+            response_body="boom",
+            sent_at_utc=None,
+            failed_at_utc=datetime.now(tz=UTC),
+            transient_attempts=1,
+        )
+    )
+    ryder = _FakeRyder([_sent()])
+    result = _TestPuller(
+        settings=_settings(),
+        snowflake=_FakeSnowflake([{"key": "kRetry"}]),
+        ryder=ryder,
+        watermarks=InMemoryWatermarkStore(),
+        audit=audit,
+        transformer=_IdentityTransformer(),
+        sql="",
+    ).run()
+    assert result.rows_skipped_dedup == 0  # NOT skipped
+    assert result.rows_sent == 1  # retried and delivered
+    assert len(ryder.posted) == 1
+    assert audit.get("trace", "kRetry").status == AuditStatus.SENT

@@ -32,10 +32,14 @@ param ryderCustomerCodes string
 
 param watermarkMaxLookbackMinutes int = 1
 param watermarkOverlapMinutes   int = 5
+param watermarkMaxCatchupMinutes int = 1440
 param auditRetentionDays        int = 180
 param ryderMaxConcurrency       int = 5
 param ryderMaxRetries           int = 5
 param ryderTimeoutSeconds       int = 30
+param ryderMaxRps               string = '8'
+param ryderRetryAfterCapSeconds int = 30
+param ryderMaxTransientAttempts int = 3
 
 param traceCronExpression     string
 param milestoneCronExpression string
@@ -74,8 +78,12 @@ var commonEnvVars = [
   { name: 'RYDER_MAX_CONCURRENCY',            value: string(ryderMaxConcurrency) }
   { name: 'RYDER_MAX_RETRIES',                value: string(ryderMaxRetries) }
   { name: 'RYDER_TIMEOUT_SECONDS',            value: string(ryderTimeoutSeconds) }
+  { name: 'RYDER_MAX_RPS',                    value: ryderMaxRps }
+  { name: 'RYDER_RETRY_AFTER_CAP_SECONDS',    value: string(ryderRetryAfterCapSeconds) }
+  { name: 'RYDER_MAX_TRANSIENT_ATTEMPTS',     value: string(ryderMaxTransientAttempts) }
   { name: 'WATERMARK_MAX_LOOKBACK_MINUTES',   value: string(watermarkMaxLookbackMinutes) }
   { name: 'WATERMARK_OVERLAP_MINUTES',        value: string(watermarkOverlapMinutes) }
+  { name: 'WATERMARK_MAX_CATCHUP_MINUTES',    value: string(watermarkMaxCatchupMinutes) }
   { name: 'AUDIT_RETENTION_DAYS',             value: string(auditRetentionDays) }
 ]
 

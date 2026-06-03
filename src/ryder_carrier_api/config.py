@@ -63,6 +63,21 @@ class AppSettings(BaseSettings):
     ryder_timeout_seconds: int = 30
     ryder_max_concurrency: int = 5
     ryder_max_retries: int = 5
+    # Token-bucket cap on outgoing Ryder requests (requests/sec), shared across
+    # worker threads. Set to ~80% of Ryder's per-SCAC limit so we self-throttle
+    # proactively instead of discovering the limit via 429s. That limit is
+    # enforced by Azure APIM and isn't published — confirm with Ryder, then tune
+    # this. Default 8 assumes a ~10 rps limit.
+    ryder_max_rps: float = 8.0
+    # When Ryder returns 429/503 with a Retry-After longer than this, stop
+    # retrying in-process (sleeping it would block a worker past the job
+    # timeout) and let the watermark replay the row on the next scheduled run.
+    ryder_retry_after_cap_seconds: int = 30
+    # Bounded retry: after this many consecutive transient delivery failures for
+    # the same row (across runs), give up and dead-letter it instead of stalling
+    # the (shared) watermark forever. Keep small — while a row is retrying it
+    # holds the watermark, so the worst-case stall is bounded by N intervals.
+    ryder_max_transient_attempts: int = 3
     secret_name_ryder_api_key: str = "ryder-api-key"
     secret_name_ryder_scac: str = "ryder-carrier-scac"
 
@@ -79,6 +94,9 @@ class AppSettings(BaseSettings):
     storage_connection_string: str = ""
     watermark_table_name: str = "watermarks"
     audit_table_name: str = "sentaudit"
+    # Blob container holding dead-letter records (full payload + failure context
+    # for rows Ryder rejected or that exhausted transient retries).
+    deadletter_container_name: str = "deadletter"
 
     # --- Audit retention ---
     audit_retention_days: int = 180
@@ -93,6 +111,15 @@ class AppSettings(BaseSettings):
     # backfill old data; each environment overrides explicitly (dev=64800,
     # prod=1).
     watermark_max_lookback_minutes: int = 1
+    # Catch-up cap: max minutes a steady-state run will look back once the
+    # watermark has fallen behind (e.g. after a long Ryder/Snowflake outage).
+    # Beyond this we clamp the cursor forward and log `puller_catchup_capped`,
+    # deliberately skipping the oldest gap rather than re-querying an
+    # ever-growing window (which risks the run timing out before it can even
+    # dedup-scan the backlog). Default 1440 = 24h: rides out a long outage but
+    # caps a pathologically stale watermark. Tune down at high volume so the
+    # replay window stays well under what one run can drain.
+    watermark_max_catchup_minutes: int = 1440
 
     # --- Diagnostic candidate-count query ---
     # Flip to False once the Ship ID remap is proven stable — avoids an extra
@@ -107,6 +134,10 @@ class AppSettings(BaseSettings):
     @property
     def storage_account_url(self) -> str:
         return f"https://{self.storage_account_name}.table.core.windows.net"
+
+    @property
+    def storage_blob_url(self) -> str:
+        return f"https://{self.storage_account_name}.blob.core.windows.net"
 
 
 @lru_cache(maxsize=1)

@@ -35,8 +35,13 @@ from .secrets.key_vault import KeyVaultSecretProvider
 from .services.cleanup_service import CleanupService
 from .services.milestone_service import MilestoneService
 from .services.trace_service import TraceService
-from .storage.base import AuditStore, WatermarkStore
-from .storage.in_memory import InMemoryAuditStore, InMemoryWatermarkStore
+from .storage.base import AuditStore, DeadLetterStore, WatermarkStore
+from .storage.blob_dead_letter import BlobDeadLetterStore
+from .storage.in_memory import (
+    InMemoryAuditStore,
+    InMemoryDeadLetterStore,
+    InMemoryWatermarkStore,
+)
 from .storage.table_storage import TableStorageAuditStore, TableStorageWatermarkStore
 from .transformers.milestone_payload import MilestonePayloadTransformer
 from .transformers.trace_payload import TracePayloadTransformer
@@ -90,6 +95,7 @@ def _run_trace(settings: AppSettings) -> None:
             transformer=TracePayloadTransformer(),
             sql=_load_sql("trace_query.sql"),
             candidates_sql=_load_sql("trace_candidates_query.sql"),
+            dead_letter=_build_dead_letter_store(settings),
         )
         service.run()
 
@@ -111,6 +117,7 @@ def _run_milestone(settings: AppSettings) -> None:
             transformer=MilestonePayloadTransformer(),
             sql=_load_sql("milestone_query.sql"),
             candidates_sql=_load_sql("milestone_candidates_query.sql"),
+            dead_letter=_build_dead_letter_store(settings),
         )
         service.run()
 
@@ -158,6 +165,16 @@ def _build_audit_store(settings: AppSettings) -> AuditStore:
     return TableStorageAuditStore(
         storage_account_url=settings.storage_account_url,
         table_name=settings.audit_table_name,
+        connection_string=settings.storage_connection_string or None,
+    )
+
+
+def _build_dead_letter_store(settings: AppSettings) -> DeadLetterStore:
+    if not settings.storage_account_name and not settings.storage_connection_string:
+        return InMemoryDeadLetterStore()
+    return BlobDeadLetterStore(
+        account_url=settings.storage_blob_url,
+        container_name=settings.deadletter_container_name,
         connection_string=settings.storage_connection_string or None,
     )
 

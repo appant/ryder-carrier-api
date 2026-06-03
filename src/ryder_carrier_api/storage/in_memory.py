@@ -12,6 +12,8 @@ from datetime import datetime
 from .base import (
     AuditEntry,
     AuditStore,
+    DeadLetterRecord,
+    DeadLetterStore,
     WatermarkRecord,
     WatermarkStore,
 )
@@ -49,3 +51,11 @@ class InMemoryAuditStore(AuditStore):
                 del self._entries[key]
                 deleted += 1
         return deleted
+
+
+class InMemoryDeadLetterStore(DeadLetterStore):
+    def __init__(self) -> None:
+        self.records: dict[tuple[str, str], DeadLetterRecord] = {}
+
+    def put(self, record: DeadLetterRecord) -> None:
+        self.records[(record.pipeline, record.key)] = record

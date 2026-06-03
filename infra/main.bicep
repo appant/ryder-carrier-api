@@ -57,6 +57,9 @@ param watermarkMaxLookbackMinutes int = 1
 @description('Overlap buffer in minutes subtracted from the watermark to avoid missing late-arriving rows')
 param watermarkOverlapMinutes int = 5
 
+@description('Max minutes a steady-state run looks back once the watermark falls behind (e.g. long outage). Beyond this the oldest gap is skipped (logged as puller_catchup_capped) instead of replayed. Default 1440 = 24h.')
+param watermarkMaxCatchupMinutes int = 1440
+
 @description('Audit log retention in days')
 param auditRetentionDays int = 180
 
@@ -69,11 +72,20 @@ param ryderMaxRetries int = 5
 @description('Ryder API request timeout in seconds')
 param ryderTimeoutSeconds int = 30
 
+@description('Outgoing Ryder request rate cap in requests/sec (token bucket). Set to ~80% of the Ryder per-SCAC limit; default 8 assumes a ~10 rps limit. String so it can carry a fractional rate.')
+param ryderMaxRps string = '8'
+
+@description('Stop retrying a Ryder call in-process when its Retry-After exceeds this many seconds; defer the row to the next scheduled run instead of blocking a worker.')
+param ryderRetryAfterCapSeconds int = 30
+
+@description('Bounded retry: after this many consecutive transient failures of the same row, dead-letter it (blob) instead of stalling the shared watermark. Keep small.')
+param ryderMaxTransientAttempts int = 3
+
 @description('Cron schedule for the trace job (every 15 min by default)')
 param traceCronExpression string = '*/15 * * * *'
 
-@description('Cron schedule for the milestone job (every hour by default)')
-param milestoneCronExpression string = '0 * * * *'
+@description('Cron schedule for the milestone job. Runs hourly at :12 — deliberately offset from the trace ticks (:00/:15/:30/:45) so the two Ryder-calling jobs never start simultaneously and burst the shared per-SCAC rate limit.')
+param milestoneCronExpression string = '12 * * * *'
 
 @description('Cron schedule for the cleanup job (1st of every month by default)')
 param cleanupCronExpression string = '0 0 1 * *'
@@ -165,10 +177,14 @@ module jobs 'modules/jobs.bicep' = {
     ryderCustomerCodes: ryderCustomerCodes
     watermarkMaxLookbackMinutes: watermarkMaxLookbackMinutes
     watermarkOverlapMinutes: watermarkOverlapMinutes
+    watermarkMaxCatchupMinutes: watermarkMaxCatchupMinutes
     auditRetentionDays: auditRetentionDays
     ryderMaxConcurrency: ryderMaxConcurrency
     ryderMaxRetries: ryderMaxRetries
     ryderTimeoutSeconds: ryderTimeoutSeconds
+    ryderMaxRps: ryderMaxRps
+    ryderRetryAfterCapSeconds: ryderRetryAfterCapSeconds
+    ryderMaxTransientAttempts: ryderMaxTransientAttempts
     traceCronExpression: traceCronExpression
     milestoneCronExpression: milestoneCronExpression
     cleanupCronExpression: cleanupCronExpression

@@ -10,6 +10,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
+from typing import Any
 
 # =============================================================================
 # Watermark
@@ -44,13 +45,16 @@ class WatermarkStore(ABC):
 class AuditStatus(StrEnum):
     """Status of a row's delivery attempt.
 
-    `sent` and `failed_permanently` are terminal: those rows are skipped on
-    replay. Transient failures are never written — they cause the tick to
-    fail so the watermark stalls and the window replays next time.
+    `sent` and `failed_permanently` are terminal — those rows are skipped on
+    replay. `retrying` is NON-terminal: it records the count of consecutive
+    transient failures for a natural key (so a row that keeps failing
+    transiently is eventually dead-lettered instead of stalling the watermark
+    forever) and is deliberately NOT skipped on replay.
     """
 
     SENT = "sent"
     FAILED_PERMANENTLY = "failed_permanently"
+    RETRYING = "retrying"
 
 
 @dataclass(frozen=True)
@@ -65,6 +69,9 @@ class AuditEntry:
     load_number: str | None = None
     event_type: str | None = None
     event_code: str | None = None
+    # Count of consecutive transient delivery failures for this key. Drives the
+    # bounded-retry-then-dead-letter behavior; only meaningful for `retrying`.
+    transient_attempts: int = 0
 
 
 class AuditStore(ABC):
@@ -89,3 +96,46 @@ class AuditStore(ABC):
 
         Returns the number of rows deleted.
         """
+
+
+class TransientStorageError(Exception):
+    """A storage operation failed for a transient/retryable reason (throttling,
+    5xx, network). Callers treat this like a transient delivery failure — stall
+    the watermark and replay — rather than silently dropping the row."""
+
+
+# =============================================================================
+# Dead-letter — full payload capture for rows we give up on
+# =============================================================================
+
+
+@dataclass(frozen=True)
+class DeadLetterRecord:
+    """Everything needed to inspect and re-POST a failed row after a fix."""
+
+    pipeline: str
+    key: str  # natural_key, or a fallback hash when the failure pre-dates it
+    reason: str  # "ryder_rejected" | "transient_exhausted" | "row_error"
+    failed_at_utc: datetime
+    payload: dict[str, Any] | None = None  # the body we built/sent, if any
+    raw_row: dict[str, Any] | None = None  # the source row, for transform failures
+    response_code: int | None = None
+    response_body: str | None = None
+    error: str | None = None
+    load_number: str | None = None
+
+
+class DeadLetterStore(ABC):
+    """Persists the full context of a dead-lettered row so ops can inspect and
+    replay it. Keyed by (pipeline, key); re-failing the same key overwrites."""
+
+    @abstractmethod
+    def put(self, record: DeadLetterRecord) -> None:
+        """Persist (or overwrite) the dead-letter record."""
+
+
+class NullDeadLetterStore(DeadLetterStore):
+    """No-op sink — used when no blob storage is configured (e.g. unit tests)."""
+
+    def put(self, record: DeadLetterRecord) -> None:
+        return None

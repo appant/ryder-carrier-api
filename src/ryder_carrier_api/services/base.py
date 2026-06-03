@@ -11,6 +11,7 @@ Each concrete puller orchestrates one cadence:
 
 from __future__ import annotations
 
+import json
 from abc import ABC, abstractmethod
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, as_completed
 from concurrent.futures import wait as futures_wait
@@ -22,19 +23,24 @@ from uuid import uuid4
 
 import structlog
 
-from ..clients.ryder_client import RyderClient, RyderEndpoint, RyderResultStatus
+from ..clients.ryder_client import RyderClient, RyderEndpoint, RyderResult, RyderResultStatus
 from ..clients.snowflake_client import SnowflakeClient
 from ..config import AppSettings
 from ..storage.base import (
     AuditEntry,
     AuditStatus,
     AuditStore,
+    DeadLetterRecord,
+    DeadLetterStore,
+    NullDeadLetterStore,
+    TransientStorageError,
     WatermarkRecord,
     WatermarkStore,
 )
-from ..transformers.base import PayloadTransformer
+from ..transformers.base import PayloadTransformer, TransformedPayload
 from ..transformers.trace_payload import SkipRow
 from ..utils.logging import get_logger
+from ..utils.natural_key import natural_key_hash
 
 logger = get_logger(__name__)
 
@@ -54,6 +60,7 @@ class RunResult:
     rows_dlq: int
     rows_skipped_invalid: int
     rows_transient_failed: int
+    rows_throttled: int = 0
 
 
 class PullerService(ABC):
@@ -77,6 +84,7 @@ class PullerService(ABC):
         transformer: PayloadTransformer,
         sql: str,
         candidates_sql: str | None = None,
+        dead_letter: DeadLetterStore | None = None,
     ) -> None:
         self._settings = settings
         self._snowflake = snowflake
@@ -86,17 +94,17 @@ class PullerService(ABC):
         self._transformer = transformer
         self._sql = sql
         self._candidates_sql = candidates_sql
+        self._dead_letter = dead_letter or NullDeadLetterStore()
 
     # --- public ---
 
     def run(self) -> RunResult:
         run_started = _now_utc()
-        cursor_start = self._compute_cursor_start(run_started)
-        window_hours = round((run_started - cursor_start).total_seconds() / 3600, 2)
         run_id = str(uuid4())
-        log = logger.bind(
-            run_id=run_id,
-            pipeline=self.pipeline_name,
+        log = logger.bind(run_id=run_id, pipeline=self.pipeline_name)
+        cursor_start = self._compute_cursor_start(run_started, log=log)
+        window_hours = round((run_started - cursor_start).total_seconds() / 3600, 2)
+        log = log.bind(
             cursor_start=cursor_start.isoformat(),
             run_started=run_started.isoformat(),
             window_hours=window_hours,
@@ -110,12 +118,15 @@ class PullerService(ABC):
             ),
         )
 
-        seen = sent = dedup = dlq = invalid = transient = 0
+        seen = sent = dedup = dlq = invalid = transient = throttled = 0
         dlq_codes: dict[str, int] = {}
         max_workers = self._settings.ryder_max_concurrency
 
-        def _tally(outcome: str) -> None:
-            nonlocal sent, dedup, dlq, invalid, transient
+        def _tally(result: tuple[str, bool]) -> None:
+            nonlocal sent, dedup, dlq, invalid, transient, throttled
+            outcome, was_throttled = result
+            if was_throttled:
+                throttled += 1
             if outcome == "sent":
                 sent += 1
             elif outcome.startswith("dlq"):
@@ -131,14 +142,17 @@ class PullerService(ABC):
 
         def _drain(futures: Any) -> None:  # accepts set or as_completed iterator
             """Collect results from completed futures, update counters."""
-            nonlocal seen, dlq
+            nonlocal seen, transient
             for f in futures:
                 seen += 1
                 try:
                     _tally(f.result())
                 except Exception as exc:
+                    # Unexpected escape from _handle_row (a bug we didn't
+                    # classify). Fail closed — count transient so the watermark
+                    # stalls and we replay, rather than silently dropping the row.
                     log.exception("row_failed_unexpected", error=str(exc))
-                    dlq += 1
+                    transient += 1
 
         params = self._build_query_params(cursor_start, run_started)
         self._log_candidate_counts(params, log=log)
@@ -161,6 +175,7 @@ class PullerService(ABC):
                 rows_transient_failed=transient,
                 rows_sent=sent,
                 rows_seen=seen,
+                rows_throttled=throttled,
             )
             return RunResult(
                 status=RunStatus.FAILED_TRANSIENT,
@@ -170,6 +185,7 @@ class PullerService(ABC):
                 rows_dlq=dlq,
                 rows_skipped_invalid=invalid,
                 rows_transient_failed=transient,
+                rows_throttled=throttled,
             )
 
         # All accounted for — advance the watermark.
@@ -190,6 +206,7 @@ class PullerService(ABC):
             rows_dlq=dlq,
             rows_dlq_by_reason=dlq_codes,
             rows_skipped_invalid=invalid,
+            rows_throttled=throttled,
         )
         return RunResult(
             status=status,
@@ -199,6 +216,7 @@ class PullerService(ABC):
             rows_dlq=dlq,
             rows_skipped_invalid=invalid,
             rows_transient_failed=0,
+            rows_throttled=throttled,
         )
 
     # --- to be overridden by subclasses ---
@@ -209,7 +227,9 @@ class PullerService(ABC):
 
     # --- internals ---
 
-    def _compute_cursor_start(self, run_started: datetime) -> datetime:
+    def _compute_cursor_start(
+        self, run_started: datetime, *, log: structlog.stdlib.BoundLogger = logger
+    ) -> datetime:
         """Compute the lower-bound timestamp for the pull window.
 
         Cold start (no watermark yet): look back exactly
@@ -217,11 +237,15 @@ class PullerService(ABC):
         very first run doesn't backfill historical data.
 
         Steady state (watermark exists): resume from the last successful
-        watermark minus the overlap buffer, so no rows are missed between runs.
-        The cold-start lookback is deliberately NOT applied as a per-run floor
-        here — after an outage we replay everything since the last watermark
-        (audit dedup guards against duplicates) rather than silently dropping
-        the gap.
+        watermark minus the overlap buffer, so no rows are missed between runs
+        (audit dedup guards against duplicates).
+
+        Catch-up cap: after a long outage the watermark can fall far behind
+        ``now``. We refuse to replay more than ``watermark_max_catchup_minutes``
+        — re-querying an ever-growing window risks the run timing out before it
+        can even dedup-scan the backlog (a livelock). Beyond the cap we clamp
+        the cursor forward and log ``puller_catchup_capped`` so the deliberately
+        skipped gap is visible rather than silent.
         """
         wm = self._watermarks.get(self.pipeline_name)
 
@@ -230,7 +254,24 @@ class PullerService(ABC):
             return run_started - cold_start
 
         overlap = timedelta(minutes=self._settings.watermark_overlap_minutes)
-        return wm.last_synced_at_utc - overlap
+        cursor = wm.last_synced_at_utc - overlap
+
+        floor = run_started - timedelta(minutes=self._settings.watermark_max_catchup_minutes)
+        if cursor < floor:
+            skipped_hours = round((floor - cursor).total_seconds() / 3600, 2)
+            log.warning(
+                "puller_catchup_capped",
+                message=(
+                    f"Watermark older than the "
+                    f"{self._settings.watermark_max_catchup_minutes}-minute catch-up cap; "
+                    f"skipping {skipped_hours}h ({cursor.isoformat()} → {floor.isoformat()})."
+                ),
+                watermark=wm.last_synced_at_utc.isoformat(),
+                capped_cursor_start=floor.isoformat(),
+                skipped_hours=skipped_hours,
+            )
+            return floor
+        return cursor
 
     def _log_candidate_counts(
         self, params: dict[str, Any], *, log: structlog.stdlib.BoundLogger
@@ -256,8 +297,18 @@ class PullerService(ABC):
             return
         log.info("puller_candidates", **{k.lower(): v for k, v in rows[0].items()})
 
-    def _handle_row(self, row: dict[str, Any], *, log: structlog.stdlib.BoundLogger) -> str:
-        """Process one row. Returns the outcome label for counters."""
+    def _handle_row(
+        self, row: dict[str, Any], *, log: structlog.stdlib.BoundLogger
+    ) -> tuple[str, bool]:
+        """Process one row. Returns (outcome label, was_throttled) for counters.
+
+        Failure handling, by kind:
+          - transform/data error (deterministic) -> dead-letter the raw row, advance
+          - Ryder 4xx rejection                  -> dead-letter the payload, advance
+          - transient (Ryder 5xx/429, storage blip) -> stall + replay, counting
+            attempts; after `ryder_max_transient_attempts` a persistently-failing
+            row is dead-lettered so it can't stall the shared watermark forever
+        """
         jsonable_row = _jsonable(row)
         ship_id = jsonable_row.get("SHIP_ID")
         log.info(
@@ -265,6 +316,7 @@ class PullerService(ABC):
             message=f"Pulled row from Snowflake (ship_id={ship_id})",
             row=jsonable_row,
         )
+
         try:
             transformed = self._transformer.transform(row)
         except SkipRow as exc:
@@ -273,7 +325,24 @@ class PullerService(ABC):
                 message=f"Skipped row (ship_id={ship_id}): {exc}",
                 reason=str(exc),
             )
-            return "invalid"
+            return "invalid", False
+        except Exception as exc:
+            # A non-SkipRow transform error is deterministic — it would fail the
+            # same way on every replay. Capture the source row and advance rather
+            # than stalling the whole pipeline on one bad record.
+            log.exception("row_transform_error", ship_id=ship_id, error=str(exc))
+            self._safe_dead_letter(
+                DeadLetterRecord(
+                    pipeline=self.pipeline_name,
+                    key=self._fallback_key(jsonable_row),
+                    reason="row_error",
+                    failed_at_utc=_now_utc(),
+                    raw_row=jsonable_row,
+                    error=str(exc),
+                ),
+                log=log,
+            )
+            return "dlq:row_error", False
 
         log.info(
             "ryder_payload",
@@ -285,14 +354,31 @@ class PullerService(ABC):
             payload=transformed.payload,
         )
 
-        existing = self._audit.get(self.pipeline_name, transformed.natural_key)
-        if existing is not None:
-            log.info(
-                "row_skipped_dedup",
-                message=f"Skipped (already sent) natural_key={transformed.natural_key}",
+        try:
+            existing = self._audit.get(self.pipeline_name, transformed.natural_key)
+        except TransientStorageError as exc:
+            # Couldn't even check dedup — nothing was sent, so just replay.
+            log.warning(
+                "audit_read_failed_transient",
                 natural_key=transformed.natural_key,
+                error=str(exc),
             )
-            return "dedup"
+            return "transient", False
+
+        prior_attempts = 0
+        if existing is not None:
+            if existing.status in (AuditStatus.SENT, AuditStatus.FAILED_PERMANENTLY):
+                log.info(
+                    "row_skipped_dedup",
+                    message=(
+                        f"Skipped (terminal: {existing.status.value}) "
+                        f"natural_key={transformed.natural_key}"
+                    ),
+                    natural_key=transformed.natural_key,
+                )
+                return "dedup", False
+            # RETRYING is non-terminal — carry the attempt count forward and retry.
+            prior_attempts = existing.transient_attempts
 
         result = self._ryder.post(self.endpoint, transformed.payload)
         log.info(
@@ -308,22 +394,28 @@ class PullerService(ABC):
             status=result.status.value,
         )
 
-        if result.status == RyderResultStatus.SENT:
-            self._audit.upsert(
-                AuditEntry(
-                    pipeline=self.pipeline_name,
-                    natural_key=transformed.natural_key,
-                    status=AuditStatus.SENT,
-                    response_code=result.response_code,
-                    response_body=result.response_body[:8000],
-                    sent_at_utc=_now_utc(),
-                    failed_at_utc=None,
-                    load_number=transformed.load_number,
-                    event_type=transformed.event_type,
-                    event_code=transformed.event_code,
-                )
+        if result.throttled:
+            log.warning(
+                "ryder_throttled",
+                message=f"Ryder rate-limited (429) for natural_key={transformed.natural_key}",
+                natural_key=transformed.natural_key,
+                response_code=result.response_code,
+                attempts=result.attempts,
             )
-            return "sent"
+
+        if result.status == RyderResultStatus.SENT:
+            try:
+                self._audit.upsert(self._audit_entry(transformed, result, AuditStatus.SENT))
+            except TransientStorageError as exc:
+                # Delivered, but we couldn't record it. Do NOT replay (that would
+                # risk a duplicate at Ryder) — count it as sent. A rare unrelated
+                # replay could re-send; acceptable vs. a guaranteed duplicate.
+                log.error(
+                    "audit_write_failed_after_send",
+                    natural_key=transformed.natural_key,
+                    error=str(exc),
+                )
+            return "sent", result.throttled
 
         if result.status == RyderResultStatus.FAILED_PERMANENTLY:
             log.error(
@@ -332,30 +424,141 @@ class PullerService(ABC):
                 response_body=result.response_body[:500],
                 natural_key=transformed.natural_key,
             )
-            self._audit.upsert(
-                AuditEntry(
+            self._safe_dead_letter(
+                DeadLetterRecord(
                     pipeline=self.pipeline_name,
-                    natural_key=transformed.natural_key,
-                    status=AuditStatus.FAILED_PERMANENTLY,
+                    key=transformed.natural_key,
+                    reason="ryder_rejected",
+                    failed_at_utc=_now_utc(),
+                    payload=transformed.payload,
                     response_code=result.response_code,
                     response_body=result.response_body[:8000],
-                    sent_at_utc=None,
-                    failed_at_utc=_now_utc(),
                     load_number=transformed.load_number,
-                    event_type=transformed.event_type,
-                    event_code=transformed.event_code,
-                )
+                ),
+                log=log,
             )
-            return f"dlq:{result.response_code}"
+            if not self._mark_terminal_failed(transformed, result, log=log):
+                return "transient", result.throttled
+            return f"dlq:{result.response_code}", result.throttled
 
-        # Transient — don't write audit; the tick will fail to advance and replay.
+        # Transient — bounded retry across runs before giving up.
+        attempts = prior_attempts + 1
+        if attempts >= self._settings.ryder_max_transient_attempts:
+            log.error(
+                "row_transient_exhausted",
+                natural_key=transformed.natural_key,
+                attempts=attempts,
+                response_code=result.response_code,
+            )
+            self._safe_dead_letter(
+                DeadLetterRecord(
+                    pipeline=self.pipeline_name,
+                    key=transformed.natural_key,
+                    reason="transient_exhausted",
+                    failed_at_utc=_now_utc(),
+                    payload=transformed.payload,
+                    response_code=result.response_code,
+                    response_body=result.response_body[:8000],
+                    error=f"{attempts} consecutive transient failures",
+                    load_number=transformed.load_number,
+                ),
+                log=log,
+            )
+            if not self._mark_terminal_failed(transformed, result, log=log):
+                return "transient", result.throttled
+            return "dlq:transient_exhausted", result.throttled
+
         log.warning(
             "row_failed_transient",
             response_code=result.response_code,
             attempts=result.attempts,
+            transient_attempts=attempts,
             natural_key=transformed.natural_key,
         )
-        return "transient"
+        # Persist the incremented attempt count so the next run resumes it. A
+        # storage blip here just means the count doesn't advance this round — the
+        # row is transient regardless, so we replay either way.
+        try:
+            self._audit.upsert(
+                self._audit_entry(transformed, result, AuditStatus.RETRYING, attempts=attempts)
+            )
+        except TransientStorageError as exc:
+            log.warning(
+                "audit_write_failed_transient",
+                natural_key=transformed.natural_key,
+                error=str(exc),
+            )
+        return "transient", result.throttled
+
+    # --- audit / dead-letter helpers ---
+
+    def _audit_entry(
+        self,
+        transformed: TransformedPayload,
+        result: RyderResult,
+        status: AuditStatus,
+        *,
+        attempts: int = 0,
+    ) -> AuditEntry:
+        now = _now_utc()
+        return AuditEntry(
+            pipeline=self.pipeline_name,
+            natural_key=transformed.natural_key,
+            status=status,
+            response_code=result.response_code,
+            response_body=result.response_body[:8000],
+            sent_at_utc=now if status == AuditStatus.SENT else None,
+            failed_at_utc=None if status == AuditStatus.SENT else now,
+            load_number=transformed.load_number,
+            event_type=transformed.event_type,
+            event_code=transformed.event_code,
+            transient_attempts=attempts,
+        )
+
+    def _mark_terminal_failed(
+        self,
+        transformed: TransformedPayload,
+        result: RyderResult,
+        *,
+        log: structlog.stdlib.BoundLogger,
+    ) -> bool:
+        """Write the terminal FAILED_PERMANENTLY audit row. Returns False if a
+        transient storage error blocked it — the caller then replays to retry
+        (the dead-letter blob is already written, so the retry is idempotent)."""
+        try:
+            self._audit.upsert(
+                self._audit_entry(transformed, result, AuditStatus.FAILED_PERMANENTLY)
+            )
+            return True
+        except TransientStorageError as exc:
+            log.warning(
+                "audit_write_failed_transient",
+                natural_key=transformed.natural_key,
+                error=str(exc),
+            )
+            return False
+
+    def _safe_dead_letter(
+        self, record: DeadLetterRecord, *, log: structlog.stdlib.BoundLogger
+    ) -> None:
+        """Persist a dead-letter record; never let a DLQ-store failure crash the
+        row handler — we still want to mark the row terminal and keep moving."""
+        try:
+            self._dead_letter.put(record)
+            log.info("row_dead_lettered", key=record.key, reason=record.reason)
+        except Exception as exc:
+            log.error(
+                "dead_letter_write_failed",
+                key=record.key,
+                reason=record.reason,
+                error=str(exc),
+            )
+
+    @staticmethod
+    def _fallback_key(jsonable_row: dict[str, Any]) -> str:
+        """Deterministic dead-letter key for rows that failed before a
+        natural_key existed (transform errors)."""
+        return "rowerror-" + natural_key_hash(json.dumps(jsonable_row, sort_keys=True, default=str))
 
 
 def _now_utc() -> datetime:

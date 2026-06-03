@@ -2,10 +2,16 @@
 
 from __future__ import annotations
 
+import time
 from datetime import UTC, datetime
 from typing import Any
 
-from azure.core.exceptions import ResourceNotFoundError
+from azure.core.exceptions import (
+    HttpResponseError,
+    ResourceNotFoundError,
+    ServiceRequestError,
+    ServiceResponseError,
+)
 from azure.data.tables import TableClient, TableServiceClient, UpdateMode
 from azure.identity import DefaultAzureCredential
 
@@ -13,9 +19,26 @@ from .base import (
     AuditEntry,
     AuditStatus,
     AuditStore,
+    TransientStorageError,
     WatermarkRecord,
     WatermarkStore,
 )
+
+# HTTP statuses worth treating as transient (retry / replay) rather than a
+# permanent storage failure.
+_TRANSIENT_STATUS = frozenset({408, 429, 500, 502, 503, 504})
+
+
+def _is_transient_azure_error(exc: Exception) -> bool:
+    """True for Azure errors worth retrying / treating as transient (network,
+    timeouts, throttling, 5xx); False for permanent ones (4xx like a bad or
+    oversized entity)."""
+    if isinstance(exc, ServiceRequestError | ServiceResponseError):
+        return True
+    if isinstance(exc, HttpResponseError):
+        return exc.status_code in _TRANSIENT_STATUS
+    return False
+
 
 # Common partition key for the single-pipeline-per-row watermark table.
 # Keeps everything in one partition for fast lookup; volume is trivial.
@@ -112,6 +135,10 @@ class TableStorageAuditStore(AuditStore):
             entity = self._client.get_entity(partition_key=pipeline, row_key=natural_key)
         except ResourceNotFoundError:
             return None
+        except (ServiceRequestError, ServiceResponseError, HttpResponseError) as exc:
+            if _is_transient_azure_error(exc):
+                raise TransientStorageError(f"audit get failed: {exc}") from exc
+            raise
         return _entity_to_entry(entity)
 
     def upsert(self, entry: AuditEntry) -> None:
@@ -126,8 +153,32 @@ class TableStorageAuditStore(AuditStore):
             "load_number": entry.load_number or "",
             "event_type": entry.event_type or "",
             "event_code": entry.event_code or "",
+            "transient_attempts": entry.transient_attempts,
         }
-        self._client.upsert_entity(entity=entity, mode=UpdateMode.REPLACE)
+        self._upsert_with_retry(entity)
+
+    def _upsert_with_retry(self, entity: dict[str, Any], attempts: int = 3) -> None:
+        """Upsert with a short in-run retry on transient errors.
+
+        Matters most for the write that records a *successful* send: a brief
+        Table Storage blip there must not force a replay (which could double-send
+        to Ryder). If it still fails after the retries, raise
+        ``TransientStorageError`` so the caller decides what to do.
+        """
+        last_exc: Exception | None = None
+        for i in range(attempts):
+            try:
+                self._client.upsert_entity(entity=entity, mode=UpdateMode.REPLACE)
+                return
+            except (ServiceRequestError, ServiceResponseError, HttpResponseError) as exc:
+                if not _is_transient_azure_error(exc):
+                    raise
+                last_exc = exc
+                if i < attempts - 1:
+                    time.sleep(0.2 * (i + 1))
+        raise TransientStorageError(
+            f"audit upsert failed after {attempts} attempts: {last_exc}"
+        ) from last_exc
 
     def delete_older_than(self, pipeline: str, cutoff_utc: datetime) -> int:
         """Delete audit rows whose terminal timestamp is older than the cutoff.
@@ -170,6 +221,7 @@ def _entity_to_entry(entity: dict[str, Any]) -> AuditEntry:
         load_number=entity.get("load_number") or None,
         event_type=entity.get("event_type") or None,
         event_code=entity.get("event_code") or None,
+        transient_attempts=int(entity.get("transient_attempts") or 0),
     )
 
 
