@@ -34,7 +34,20 @@ JOIN (
     GROUP BY ORDER_ID
 ) sid ON sid.ORDER_ID = o.ORDER_ID
 WHERE o.CUSTOMER_CODE IN (%(customer_codes)s)
-  AND se.UPDATED_AT_UTC >  %(cursor_start)s
-  AND se.UPDATED_AT_UTC <= %(run_started)s
+  -- Window on the SHARE-ARRIVAL clock, not the source stamp. STOP_EVENTS rows
+  -- land in the share minutes-to-hours after their UPDATED_AT_UTC; with the
+  -- source-stamp filter, a run can fire before the row is visible, advance the
+  -- watermark, and lose it forever (see late-share-load analysis). Filtering on
+  -- META_PROCESSED_AT_UTC (when the share ETL actually wrote the row) catches a
+  -- record the moment it becomes queryable. Cast LTZ->UTC NTZ so it compares
+  -- identically to the source-stamp columns (same bind params + watermark — no
+  -- code change). Re-reads under overlap are deduped by the stable natural_key
+  -- (load_number + event_type + actual_time), so no duplicate events reach Ryder.
+  -- NOTE: this fixes the driving-row-late race. A small subset of misses where a
+  -- PARENT (route/order) loads late while the stop event was on-time is NOT fully
+  -- covered here — that needs a bounded trailing re-scan backstop (deliberately
+  -- NOT GREATEST-of-all-tables, which re-floods on dimension bulk re-stamps).
+  AND CONVERT_TIMEZONE('UTC', se.META_PROCESSED_AT_UTC)::TIMESTAMP_NTZ >  %(cursor_start)s
+  AND CONVERT_TIMEZONE('UTC', se.META_PROCESSED_AT_UTC)::TIMESTAMP_NTZ <= %(run_started)s
   AND se.ACTUAL_EVENT_AT_UTC IS NOT NULL
 ORDER BY se.UPDATED_AT_UTC ASC

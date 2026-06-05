@@ -53,8 +53,19 @@ LEFT JOIN (
     GROUP BY ROUTE_ID
 ) se ON tu.ROUTE_ID = se.ROUTE_ID
 WHERE o.CUSTOMER_CODE IN (%(customer_codes)s)
-  AND tu.UPDATED_AT_UTC >  %(cursor_start)s
-  AND tu.UPDATED_AT_UTC <= %(run_started)s
+  -- Window on the SHARE-ARRIVAL clock, not the source stamp. TRACKING_UPDATES
+  -- rows land in the share ~8-17 min after their UPDATED_AT_UTC; with a ~20-min
+  -- run window that lag means the run almost always fires before the row is
+  -- visible, the watermark advances, and the ping is lost forever (see the
+  -- late-share-load analysis: 124/143 traces missed). META_PROCESSED_AT_UTC is
+  -- when the share ETL actually wrote the row, so a ping is caught the moment it
+  -- becomes queryable, regardless of load lag. It is TIMESTAMP_LTZ; cast to UTC
+  -- NTZ so it compares identically to the source-stamp columns (same bind
+  -- params, same watermark semantics — no code change needed). Re-reads under
+  -- overlap may re-encounter a ping; dedup handles that (duplicate GPS traces
+  -- are harmless idempotent data).
+  AND CONVERT_TIMEZONE('UTC', tu.META_PROCESSED_AT_UTC)::TIMESTAMP_NTZ >  %(cursor_start)s
+  AND CONVERT_TIMEZONE('UTC', tu.META_PROCESSED_AT_UTC)::TIMESTAMP_NTZ <= %(run_started)s
   AND tu.IS_DELETED = FALSE
   AND tu.CURRENT_LOCATION_LATITUDE IS NOT NULL
   AND tu.CURRENT_LOCATION_LONGITUDE IS NOT NULL

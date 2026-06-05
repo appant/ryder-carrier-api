@@ -28,6 +28,8 @@ LEFT JOIN (
     GROUP BY ORDER_ID
 ) sid ON sid.ORDER_ID = o.ORDER_ID
 WHERE o.CUSTOMER_CODE IN (%(customer_codes)s)
-  AND se.UPDATED_AT_UTC >  %(cursor_start)s
-  AND se.UPDATED_AT_UTC <= %(run_started)s
+  -- Match milestone_query.sql: window on the share-arrival clock (META_PROCESSED),
+  -- not the source stamp, so candidate counts line up with what the main query pulls.
+  AND CONVERT_TIMEZONE('UTC', se.META_PROCESSED_AT_UTC)::TIMESTAMP_NTZ >  %(cursor_start)s
+  AND CONVERT_TIMEZONE('UTC', se.META_PROCESSED_AT_UTC)::TIMESTAMP_NTZ <= %(run_started)s
   AND se.ACTUAL_EVENT_AT_UTC IS NOT NULL
