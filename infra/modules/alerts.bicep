@@ -48,6 +48,10 @@ resource alertJobFailed 'Microsoft.Insights/scheduledQueryRules@2023-03-15-previ
     evaluationFrequency: 'PT5M'
     windowSize: 'PT10M'
     scopes: [lawResourceId]
+    // The ContainerAppConsoleLogs_CL custom table only exists after the first
+    // container log is ingested. On a fresh workspace it isn't there yet, so
+    // skip schema validation at deploy time — the rule still works once logs flow.
+    skipQueryValidation: true
     criteria: {
       allOf: [
         {
@@ -89,6 +93,10 @@ resource alertDlq 'Microsoft.Insights/scheduledQueryRules@2023-03-15-preview' = 
     evaluationFrequency: 'PT15M'
     windowSize: 'PT30M'
     scopes: [lawResourceId]
+    // The ContainerAppConsoleLogs_CL custom table only exists after the first
+    // container log is ingested. On a fresh workspace it isn't there yet, so
+    // skip schema validation at deploy time — the rule still works once logs flow.
+    skipQueryValidation: true
     criteria: {
       allOf: [
         {
@@ -130,6 +138,10 @@ resource alertNoDataSent 'Microsoft.Insights/scheduledQueryRules@2023-03-15-prev
     evaluationFrequency: 'PT30M'
     windowSize: 'PT1H'
     scopes: [lawResourceId]
+    // The ContainerAppConsoleLogs_CL custom table only exists after the first
+    // container log is ingested. On a fresh workspace it isn't there yet, so
+    // skip schema validation at deploy time — the rule still works once logs flow.
+    skipQueryValidation: true
     criteria: {
       allOf: [
         {
@@ -176,6 +188,10 @@ resource alertMilestoneNotRunning 'Microsoft.Insights/scheduledQueryRules@2023-0
     evaluationFrequency: 'PT30M'
     windowSize: 'PT2H'
     scopes: [lawResourceId]
+    // The ContainerAppConsoleLogs_CL custom table only exists after the first
+    // container log is ingested. On a fresh workspace it isn't there yet, so
+    // skip schema validation at deploy time — the rule still works once logs flow.
+    skipQueryValidation: true
     criteria: {
       allOf: [
         {
@@ -214,6 +230,10 @@ resource alertTraceNotRunning 'Microsoft.Insights/scheduledQueryRules@2023-03-15
     evaluationFrequency: 'PT15M'
     windowSize: 'PT45M'
     scopes: [lawResourceId]
+    // The ContainerAppConsoleLogs_CL custom table only exists after the first
+    // container log is ingested. On a fresh workspace it isn't there yet, so
+    // skip schema validation at deploy time — the rule still works once logs flow.
+    skipQueryValidation: true
     criteria: {
       allOf: [
         {
